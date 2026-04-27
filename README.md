@@ -1,10 +1,8 @@
 # opensource-release-watcher
 
-`opensource-release-watcher` 是一个用于监控开源组件版本发布的轻量级工具。
+`opensource-release-watcher` 是一个用于监控开源组件版本发布的 Web 服务。
 
-它定期检查 GitHub / GitLab 等开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会根据配置，通过邮件通知对应订阅人。
-
-不做即时通讯多渠道分发，不做自动升级，也不做复杂工作流编排。
+它定期检查 GitHub / GitLab 等开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会通知对应订阅人。
 
 ## 背景
 
@@ -28,22 +26,22 @@
 - 组件 owner 不明确
 - Release Note 无人跟踪
 
-因此，本项目希望提供一个简单、可落地的机制，对开源组件版本变化进行持续监控，并通过邮件发送提醒。
+因此，本项目希望提供一个简单、可落地的机制，对开源组件版本变化进行持续监控。
 
 ## 功能目标
 
-### 初版能力
+### 核心能力
 
-- 维护一份开源组件清单
+- 维护开源组件清单
 - 定期查询组件的最新 Release
 - 当项目没有 Release 时，自动回退查询 Tag
 - 记录上一次检查到的版本
 - 避免重复发送相同版本通知
 - 只支持邮件订阅与邮件通知
-- 支持为不同组件配置不同 owner
+- 支持为不同组件配置不同负责人
 - 支持生成版本更新摘要
 
-### 后续可扩展能力
+### 扩展方向
 
 - 支持 GitHub Security Advisory
 - 支持 OSV 漏洞数据库查询
@@ -82,7 +80,7 @@
 
 ### 1. 组件版本发布提醒
 
-当某个组件发布新版本时，系统自动通过邮件通知负责人。
+当某个组件发布新版本时，系统自动通知负责人。
 
 例如：
 
@@ -107,7 +105,7 @@ patch
 
 ### 3. 开源组件治理
 
-团队可以通过该工具维护内部使用的开源组件清单，包括：
+团队可以通过该系统维护内部使用的组件清单，包括：
 
 - 当前使用版本
 - 最新上游版本
@@ -116,9 +114,27 @@ patch
 - 通知记录
 - 升级状态
 
-## 配置示例
+## 服务端配置示例
 
 ```yaml
+server:
+  listen: ":8080"
+
+scheduler:
+  enabled: true
+  cron: "0 9 * * *"
+
+database:
+  driver: sqlite
+  dsn: "data/watcher.db"
+
+smtp:
+  host: smtp.example.com
+  port: 587
+  username: notifier@example.com
+  password: your-password
+  from: notifier@example.com
+
 components:
   - name: protobuf
     source: github
@@ -145,6 +161,14 @@ components:
       tag: true
       security: true
 ```
+
+其中：
+
+- `server` 用于配置 HTTP 服务
+- `scheduler` 用于配置定时检查策略
+- `database` 用于配置状态存储
+- `smtp` 用于配置邮件发送
+- `components` 用于配置需要持续监控的组件清单
 
 `subscribers` 表示邮件接收人列表。
 
@@ -179,47 +203,69 @@ Release Note 摘要：
 
 ## 推荐架构
 
-推荐采用轻量级 Web 服务方式：
+推荐采用前后端分离的 Web 服务方式：
 
 ```text
-Go HTTP Server + Scheduler + components.yaml + SQLite + SMTP
+Frontend (React + TypeScript + Vite + Ant Design)
+        +
+Go HTTP API Server + Scheduler + components.yaml + SQLite + SMTP
 ```
-
-本项目初版不引入复杂通知通道，通知统一通过 SMTP 邮件完成。
 
 ## 模块设计
 
 ```text
 opensource-release-watcher/
-├── cmd/
-│   └── server/
-│       └── main.go
-├── internal/
-│   ├── config/
-│   ├── github/
-│   ├── gitlab/
-│   ├── checker/
-│   ├── scheduler/
-│   ├── storage/
-│   ├── notifier/
-│   ├── service/
-│   ├── api/
-│   └── version/
+├── web/
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   └── vite.config.ts
+├── server/
+│   ├── cmd/
+│   │   └── server/
+│   │       └── main.go
+│   ├── internal/
+│   │   ├── config/
+│   │   ├── github/
+│   │   ├── gitlab/
+│   │   ├── checker/
+│   │   ├── scheduler/
+│   │   ├── storage/
+│   │   ├── notifier/
+│   │   ├── service/
+│   │   ├── api/
+│   │   └── version/
+│   └── go.mod
 ├── configs/
 │   └── components.yaml
 ├── templates/
 │   └── release_email.md
 ├── data/
 │   └── watcher.db
-├── README.md
-└── go.mod
+└── README.md
 ```
 
 ## 模块说明
 
+### web
+
+前端管理界面，推荐使用 React + TypeScript + Vite + Ant Design。
+
+主要用于：
+
+- 组件清单管理
+- 订阅人管理
+- 检查结果展示
+- 通知记录查看
+- 手动触发检查任务
+
+### server
+
+后端服务，负责提供 HTTP API、执行定时检查任务、保存状态以及发送通知。
+
 ### config
 
-负责读取组件配置文件，例如 `components.yaml`。
+负责读取服务端配置文件，例如 `components.yaml`。
 
 ### github
 
@@ -246,9 +292,7 @@ opensource-release-watcher/
 
 ### notifier
 
-负责邮件通知发送。
-
-通知发送由邮件 notifier 负责；如果后续确实有需要，再演进为统一通知接口。
+负责通知发送，当前由邮件 notifier 实现。
 
 ### version
 
@@ -261,18 +305,6 @@ v1.2.3 > v1.2.2
 v2.0.0 > v1.9.9
 ```
 
-## 运行方式
-
-### 启动服务
-
-服务启动后，按配置的调度策略定期执行组件检查任务。
-
-例如：
-
-```bash
-opensource-release-watcher --config configs/components.yaml
-```
-
 ## 项目定位
 
 本项目不是包管理器，也不是自动升级工具。
@@ -280,7 +312,7 @@ opensource-release-watcher --config configs/components.yaml
 它的核心定位是：
 
 ```text
-开源组件版本变化感知工具
+开源组件版本变化感知服务
 ```
 
 它当前解决的问题是：
@@ -292,31 +324,6 @@ opensource-release-watcher --config configs/components.yaml
 是否已经通知过？
 后续是否需要升级评估？
 ```
-
-## Roadmap
-
-### Phase 1
-
-- [ ] 支持 GitHub Release 查询
-- [ ] 支持 GitHub Tag 查询
-- [ ] 支持 YAML 配置
-- [ ] 支持 SQLite 状态存储
-- [ ] 支持邮件通知
-- [ ] 支持重复通知去重
-
-### Phase 2
-
-- [ ] 支持 GitLab Release 查询
-- [ ] 支持 Release Note 关键字分析
-- [ ] 支持通知优先级
-- [ ] 支持组件 owner 配置
-- [ ] 支持邮件模板
-
-### Phase 3
-
-- [ ] 支持 OSV 漏洞查询
-- [ ] 支持 GitHub Security Advisory 查询
-- [ ] 支持月度组件状态报告
 
 ## License
 
