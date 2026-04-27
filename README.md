@@ -2,7 +2,7 @@
 
 `opensource-release-watcher` 是一个用于监控开源组件版本发布的 Web 服务。
 
-它定期检查 GitHub / GitLab 等开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会通知对应订阅人。
+它定期检查 GitHub 开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会通知对应订阅人。
 
 ## 背景
 
@@ -45,7 +45,6 @@
 
 - 支持 GitHub Security Advisory
 - 支持 OSV 漏洞数据库查询
-- 支持 GitLab Release 查询增强
 - 支持 Release Note 关键字分析
 - 支持通知优先级
 - 支持月度开源组件状态报告
@@ -57,11 +56,9 @@
       ↓
 启动检查流程
       ↓
-读取 components.yaml
+从数据库读取组件清单与订阅信息
       ↓
-读取组件清单
-      ↓
-查询 GitHub / GitLab Release
+查询 GitHub Release
       ↓
 如果没有 Release，则查询 Tag
       ↓
@@ -114,63 +111,22 @@ patch
 - 通知记录
 - 升级状态
 
-## 服务端配置示例
+## 数据存储
 
-```yaml
-server:
-  listen: ":8080"
+组件清单、负责人、订阅人、检查状态和通知记录统一存储在 SQLite 中，由后台管理界面维护。
 
-scheduler:
-  enabled: true
-  cron: "0 9 * * *"
+典型数据包括：
 
-database:
-  driver: sqlite
-  dsn: "data/watcher.db"
+- 组件名称
+- GitHub 仓库地址
+- 当前使用版本
+- 负责人
+- 邮件订阅人
+- 检查策略
+- 最近一次检查结果
+- 最近一次通知记录
 
-smtp:
-  host: smtp.example.com
-  port: 587
-  username: notifier@example.com
-  password: your-password
-  from: notifier@example.com
-
-components:
-  - name: protobuf
-    source: github
-    repo: protocolbuffers/protobuf
-    current_version: "3.20.1"
-    owner: "platform-team"
-    subscribers:
-      - platform@example.com
-      - dev-lead@example.com
-    watch:
-      release: true
-      tag: true
-      security: true
-
-  - name: opencv
-    source: github
-    repo: opencv/opencv
-    current_version: "4.9.0"
-    owner: "media-team"
-    subscribers:
-      - media@example.com
-    watch:
-      release: true
-      tag: true
-      security: true
-```
-
-其中：
-
-- `server` 用于配置 HTTP 服务
-- `scheduler` 用于配置定时检查策略
-- `database` 用于配置状态存储
-- `smtp` 用于配置邮件发送
-- `components` 用于配置需要持续监控的组件清单
-
-`subscribers` 表示邮件接收人列表。
+服务端只需要少量基础配置，例如 SMTP 发信参数和监听端口；组件监控数据本身不通过外部配置文件维护。
 
 ## 通知示例
 
@@ -208,7 +164,7 @@ Release Note 摘要：
 ```text
 Frontend (React + TypeScript + Vite + Ant Design)
         +
-Go HTTP API Server + Scheduler + components.yaml + SQLite + SMTP
+Go HTTP API Server + Scheduler + SQLite + SMTP
 ```
 
 ## 模块设计
@@ -225,9 +181,7 @@ opensource-release-watcher/
 │   │   └── server/
 │   │       └── main.go
 │   ├── internal/
-│   │   ├── config/
 │   │   ├── github/
-│   │   ├── gitlab/
 │   │   ├── checker/
 │   │   ├── scheduler/
 │   │   ├── storage/
@@ -236,8 +190,6 @@ opensource-release-watcher/
 │   │   ├── api/
 │   │   └── version/
 │   └── go.mod
-├── configs/
-│   └── components.yaml
 ├── templates/
 │   └── release_email.md
 ├── data/
@@ -263,17 +215,9 @@ opensource-release-watcher/
 
 后端服务，负责提供 HTTP API、执行定时检查任务、保存状态以及发送通知。
 
-### config
-
-负责读取服务端配置文件，例如 `components.yaml`。
-
 ### github
 
 负责调用 GitHub API，查询 Release 和 Tag。
-
-### gitlab
-
-负责调用 GitLab API，查询 Release 和 Tag。
 
 ### checker
 
@@ -288,7 +232,7 @@ opensource-release-watcher/
 
 负责保存检查状态，避免重复通知。
 
-可以先使用 SQLite，后续再扩展到 PostgreSQL。
+使用 SQLite 保存组件检查状态、版本记录和通知记录。
 
 ### notifier
 
