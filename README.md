@@ -4,12 +4,6 @@
 
 它定期检查 GitHub / GitLab 等开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会根据配置，通过邮件通知对应订阅人。
 
-本项目的定位很明确：
-
-```text
-只做开源组件版本变化感知 + 邮件订阅通知
-```
-
 不做即时通讯多渠道分发，不做自动升级，也不做复杂工作流编排。
 
 ## 背景
@@ -58,19 +52,14 @@
 - 支持通知优先级
 - 支持月度开源组件状态报告
 
-以下能力当前不作为目标：
-
-- 飞书通知
-- 企业微信通知
-- Slack 通知
-- Webhook 通知
-- Web UI 订阅管理
-- 自动创建升级任务
-
 ## 核心流程
 
 ```text
-components.yaml
+定时调度触发检查任务
+      ↓
+启动检查流程
+      ↓
+读取 components.yaml
       ↓
 读取组件清单
       ↓
@@ -157,7 +146,7 @@ components:
       security: true
 ```
 
-`subscribers` 仅表示邮件接收人列表，不支持其他通知渠道。
+`subscribers` 表示邮件接收人列表。
 
 ## 通知示例
 
@@ -190,10 +179,10 @@ Release Note 摘要：
 
 ## 推荐架构
 
-初版建议采用轻量级命令行方式：
+初版建议采用轻量级 Web 服务方式：
 
 ```text
-Go CLI + components.yaml + SQLite + SMTP + cron/Jenkins
+Go HTTP Server + Scheduler + components.yaml + SQLite + SMTP
 ```
 
 本项目初版不引入复杂通知通道，通知统一通过 SMTP 邮件完成。
@@ -203,15 +192,18 @@ Go CLI + components.yaml + SQLite + SMTP + cron/Jenkins
 ```text
 opensource-release-watcher/
 ├── cmd/
-│   └── watcher/
+│   └── server/
 │       └── main.go
 ├── internal/
 │   ├── config/
 │   ├── github/
 │   ├── gitlab/
 │   ├── checker/
+│   ├── scheduler/
 │   ├── storage/
 │   ├── notifier/
+│   ├── service/
+│   ├── api/
 │   └── version/
 ├── configs/
 │   └── components.yaml
@@ -271,57 +263,21 @@ v2.0.0 > v1.9.9
 
 ## 运行方式
 
-### 手动执行
+### 启动服务
+
+服务启动后，按配置的调度策略定期执行组件检查任务。
+
+例如：
 
 ```bash
-opensource-release-watcher check --config configs/components.yaml
+opensource-release-watcher --config configs/components.yaml
 ```
 
-### 定时执行
+### 部署方式
 
-可以使用 cron：
+可以直接以长期运行进程方式部署，也可以放到容器环境中运行。
 
-```bash
-0 9 * * * /opt/opensource-release-watcher/bin/opensource-release-watcher check --config /etc/opensource-release-watcher/components.yaml
-```
-
-也可以使用 Jenkins 定时任务：
-
-```groovy
-pipeline {
-    agent any
-
-    triggers {
-        cron('H 9 * * *')
-    }
-
-    stages {
-        stage('Check OpenSource Releases') {
-            steps {
-                sh '''
-                    opensource-release-watcher check \
-                      --config configs/components.yaml
-                '''
-            }
-        }
-    }
-}
-```
-
-## 为什么不用纯人工订阅
-
-GitHub 本身支持 Watch Release，但它更适合个人使用。
-
-对于团队治理来说，仍然存在这些不足：
-
-- 无法统一维护组件清单
-- 无法知道当前项目使用的版本
-- 无法统一发送给组件 owner
-- 无法记录是否已经通知
-- 无法和内部升级流程关联
-- 无法生成统计报告
-
-因此，本项目更关注团队级别的开源组件版本感知，以及基于邮件的统一通知。
+如果后续需要，也可以由外部调度系统触发服务内部检查接口，但项目本身更推荐内置 scheduler。
 
 ## 项目定位
 
