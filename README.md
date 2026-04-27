@@ -179,7 +179,7 @@ Release Note 摘要：
 
 ## 推荐架构
 
-初版建议采用轻量级 Web 服务方式：
+推荐采用轻量级 Web 服务方式：
 
 ```text
 Go HTTP Server + Scheduler + components.yaml + SQLite + SMTP
@@ -187,7 +187,7 @@ Go HTTP Server + Scheduler + components.yaml + SQLite + SMTP
 
 本项目初版不引入复杂通知通道，通知统一通过 SMTP 邮件完成。
 
-## 初版模块设计
+## 模块设计
 
 ```text
 opensource-release-watcher/
@@ -248,7 +248,7 @@ opensource-release-watcher/
 
 负责邮件通知发送。
 
-初版只实现邮件 notifier，不设计多通知渠道抽象也可以；如果后续确实有需要，再演进为统一通知接口。
+通知发送由邮件 notifier 负责；如果后续确实有需要，再演进为统一通知接口。
 
 ### version
 
@@ -272,12 +272,6 @@ v2.0.0 > v1.9.9
 ```bash
 opensource-release-watcher --config configs/components.yaml
 ```
-
-### 部署方式
-
-可以直接以长期运行进程方式部署，也可以放到容器环境中运行。
-
-如果后续需要，也可以由外部调度系统触发服务内部检查接口，但项目本身更推荐内置 scheduler。
 
 ## 项目定位
 
@@ -326,4 +320,4 @@ opensource-release-watcher --config configs/components.yaml
 
 ## License
 
-TBD
+本项目采用 [MIT 许可](LICENSE)。
