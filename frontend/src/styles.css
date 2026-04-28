@@ -44,6 +44,17 @@ body {
   margin-top: 4px;
 }
 
+.session {
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff8e7;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 14px 0;
+}
+
 .nav {
   display: grid;
   gap: 10px;
@@ -68,6 +79,57 @@ body {
 
 .content {
   padding: 34px;
+}
+
+.boot {
+  align-items: center;
+  background: #f5f1e8;
+  color: #68645a;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+}
+
+.login-shell {
+  align-items: center;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(233, 136, 65, 0.18), transparent 28%),
+    linear-gradient(135deg, #f9f3e5 0%, #ecf1df 48%, #dce8e6 100%);
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-panel {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(32, 35, 31, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(32, 35, 31, 0.12);
+  max-width: 420px;
+  padding: 28px;
+  width: 100%;
+}
+
+.login-brand {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.login-brand h1 {
+  font-size: 24px;
+  margin: 0;
+}
+
+.login-brand p {
+  color: #68645a;
+  margin: 4px 0 0;
+}
+
+.login-alert {
+  margin-bottom: 16px;
 }
 
 .page-header {

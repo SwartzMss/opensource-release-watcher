@@ -269,6 +269,9 @@ cp .env.example .env
 | `DB_PATH` | SQLite 数据库文件路径 |
 | `GITHUB_TOKEN` | GitHub API Token，可空 |
 | `CHECK_INTERVAL` | 定时检查间隔，例如 `6h` |
+| `ADMIN_USERNAME` | 登录用户名，默认 `admin` |
+| `ADMIN_PASSWORD` | 登录密码，默认 `admin` |
+| `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境应设置为随机长字符串 |
 | `SMTP_*` | 邮件发送配置；留空时不实际发送邮件 |
 | `DOMAIN` | nginx 对外域名 |
 | `EXTERNAL_PORT` | nginx HTTPS 对外端口 |
@@ -277,6 +280,14 @@ cp .env.example .env
 | `CLIENT_MAX_BODY_SIZE` | nginx 请求体大小限制 |
 
 `.env` 包含真实域名、证书路径和密钥，不应提交；仓库只提交脱敏后的 `.env.example`。
+
+默认登录账号是 `admin/admin`。生产部署前建议至少修改：
+
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=替换成强密码
+SESSION_SECRET=替换成随机长字符串
+```
 
 ### 本地开发
 

@@ -30,7 +30,7 @@ func main() {
 	watcherService := service.New(store, releaseChecker, mailer)
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
-	router := api.NewRouter(watcherService)
+	router := api.NewRouter(watcherService, cfg.Auth)
 	log.Printf("opensource-release-watcher listening on %s", cfg.ServerAddr)
 	if err := http.ListenAndServe(cfg.ServerAddr, router); err != nil {
 		log.Fatalf("listen: %v", err)

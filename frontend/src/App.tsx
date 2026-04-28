@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -20,6 +21,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { FormInstance } from 'antd';
 import { api } from './api/client';
 import type {
+  AuthUser,
   CheckRecord,
   ComponentItem,
   DashboardSummary,
@@ -31,7 +33,31 @@ import type {
 type PageKey = 'dashboard' | 'components' | 'subscribers' | 'checks' | 'notifications';
 
 export function App() {
+  const [user, setUser] = useState<AuthUser | null>();
   const [page, setPage] = useState<PageKey>('dashboard');
+
+  useEffect(() => {
+    api.me().then(setUser).catch(() => setUser(null));
+  }, []);
+
+  async function logout() {
+    try {
+      await api.logout();
+    } catch {
+      // The local login state still needs to be cleared if the session is already expired.
+    }
+    setUser(null);
+    setPage('dashboard');
+  }
+
+  if (user === undefined) {
+    return <div className="boot">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Login onLogin={setUser} />;
+  }
+
   return (
     <Layout className="shell">
       <Layout.Sider width={260} className="side">
@@ -41,6 +67,10 @@ export function App() {
             <strong>Release Watcher</strong>
             <small>开源组件版本感知</small>
           </div>
+        </div>
+        <div className="session">
+          <span>{user.username}</span>
+          <Button size="small" onClick={() => void logout()}>退出</Button>
         </div>
         <nav className="nav">
           {[
@@ -64,6 +94,49 @@ export function App() {
         {page === 'notifications' && <Notifications />}
       </Layout.Content>
     </Layout>
+  );
+}
+
+function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(values: { username: string; password: string }) {
+    setLoading(true);
+    setError('');
+    try {
+      onLogin(await api.login(values.username, values.password));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div className="login-brand">
+          <span className="brand-mark">OR</span>
+          <div>
+            <h1>Release Watcher</h1>
+            <p>开源组件版本感知</p>
+          </div>
+        </div>
+        {error && <Alert className="login-alert" type="error" message={error} showIcon />}
+        <Form layout="vertical" initialValues={{ username: 'admin' }} onFinish={submit}>
+          <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
+            <Input autoComplete="username" />
+          </Form.Item>
+          <Form.Item name="password" label="密码" rules={[{ required: true }]}>
+            <Input.Password autoComplete="current-password" />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={loading} block>
+            登录
+          </Button>
+        </Form>
+      </section>
+    </main>
   );
 }
 

@@ -19,15 +19,29 @@ type Config struct {
 	DBPath        string
 	GitHubToken   string
 	CheckInterval time.Duration
+	Auth          AuthConfig
 	SMTP          SMTPConfig
 }
 
+type AuthConfig struct {
+	Username string
+	Password string
+	Secret   string
+}
+
 func Load() Config {
+	adminUsername := env("ADMIN_USERNAME", "admin")
+	adminPassword := env("ADMIN_PASSWORD", "admin")
 	return Config{
 		ServerAddr:    env("SERVER_ADDR", ":8080"),
 		DBPath:        env("DB_PATH", "../data/watcher.db"),
 		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
 		CheckInterval: durationEnv("CHECK_INTERVAL", 6*time.Hour),
+		Auth: AuthConfig{
+			Username: adminUsername,
+			Password: adminPassword,
+			Secret:   env("SESSION_SECRET", adminUsername+":"+adminPassword),
+		},
 		SMTP: SMTPConfig{
 			Host:     os.Getenv("SMTP_HOST"),
 			Port:     intEnv("SMTP_PORT", 587),

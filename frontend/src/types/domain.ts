@@ -11,6 +11,10 @@ export interface PageData<T> {
   page_size: number;
 }
 
+export interface AuthUser {
+  username: string;
+}
+
 export interface ComponentItem {
   id: number;
   name: string;

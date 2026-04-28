@@ -1,5 +1,6 @@
 import type {
   ApiResponse,
+  AuthUser,
   CheckRecord,
   ComponentItem,
   DashboardSummary,
@@ -12,6 +13,7 @@ import type {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
+    credentials: 'same-origin',
     ...init,
   });
   const payload = (await response.json()) as ApiResponse<T>;
@@ -22,6 +24,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  me: () => request<AuthUser>('/api/auth/me'),
+  login: (username: string, password: string) =>
+    request<AuthUser>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<{ logged_out: boolean }>('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<DashboardSummary>('/api/dashboard/summary'),
   components: (params?: Record<string, string | number | boolean | undefined>) =>
     request<PageData<ComponentItem>>(`/api/components?${query({ page: 1, page_size: 100, ...params })}`),

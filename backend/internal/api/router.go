@@ -2,13 +2,19 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"opensource-release-watcher/backend/internal/config"
 	"opensource-release-watcher/backend/internal/service"
 	"opensource-release-watcher/backend/internal/storage"
 )
@@ -16,12 +22,16 @@ import (
 type Router struct {
 	service *service.Service
 	mux     *http.ServeMux
+	auth    config.AuthConfig
 }
 
-func NewRouter(service *service.Service) http.Handler {
+const sessionCookieName = "release_watcher_session"
+
+func NewRouter(service *service.Service, auth config.AuthConfig) http.Handler {
 	router := &Router{
 		service: service,
 		mux:     http.NewServeMux(),
+		auth:    auth,
 	}
 	router.routes()
 	return router
@@ -35,10 +45,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if strings.HasPrefix(req.URL.Path, "/api/") && !r.isPublicAPI(req) && !r.authenticated(req) {
+		writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
+		return
+	}
 	r.mux.ServeHTTP(w, req)
 }
 
 func (r *Router) routes() {
+	r.mux.HandleFunc("POST /api/auth/login", r.login)
+	r.mux.HandleFunc("POST /api/auth/logout", r.logout)
+	r.mux.HandleFunc("GET /api/auth/me", r.me)
 	r.mux.HandleFunc("GET /api/dashboard/summary", r.dashboardSummary)
 	r.mux.HandleFunc("GET /api/components", r.listComponents)
 	r.mux.HandleFunc("POST /api/components", r.createComponent)
@@ -59,6 +76,52 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, req *http.Request) {
 		writeOK(w, map[string]string{"status": "ok"})
 	})
+}
+
+func (r *Router) isPublicAPI(req *http.Request) bool {
+	return req.URL.Path == "/api/auth/login"
+}
+
+func (r *Router) login(w http.ResponseWriter, req *http.Request) {
+	var payload struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decode(w, req, &payload) {
+		return
+	}
+	if payload.Username != r.auth.Username || payload.Password != r.auth.Password {
+		writeError(w, http.StatusUnauthorized, errors.New("invalid username or password"))
+		return
+	}
+	expiresAt := time.Now().Add(24 * time.Hour)
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    r.signSession(payload.Username, expiresAt),
+		Path:     "/",
+		Expires:  expiresAt,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookie(req),
+	})
+	writeOK(w, map[string]string{"username": payload.Username})
+}
+
+func (r *Router) logout(w http.ResponseWriter, req *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookie(req),
+	})
+	writeOK(w, map[string]bool{"logged_out": true})
+}
+
+func (r *Router) me(w http.ResponseWriter, req *http.Request) {
+	writeOK(w, map[string]string{"username": r.auth.Username})
 }
 
 func (r *Router) listComponents(w http.ResponseWriter, req *http.Request) {
@@ -349,6 +412,51 @@ func writeStorageError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, err)
+}
+
+func (r *Router) authenticated(req *http.Request) bool {
+	cookie, err := req.Cookie(sessionCookieName)
+	if err != nil {
+		return false
+	}
+	username, expiresAt, ok := r.parseSession(cookie.Value)
+	return ok && username == r.auth.Username && time.Now().Before(expiresAt)
+}
+
+func (r *Router) signSession(username string, expiresAt time.Time) string {
+	payload := fmt.Sprintf("%s|%d", username, expiresAt.Unix())
+	signature := r.sessionSignature(payload)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload + "|" + signature))
+}
+
+func (r *Router) parseSession(value string) (string, time.Time, bool) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) != 3 {
+		return "", time.Time{}, false
+	}
+	expiresUnix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	payload := parts[0] + "|" + parts[1]
+	if !hmac.Equal([]byte(parts[2]), []byte(r.sessionSignature(payload))) {
+		return "", time.Time{}, false
+	}
+	return parts[0], time.Unix(expiresUnix, 0), true
+}
+
+func (r *Router) sessionSignature(payload string) string {
+	mac := hmac.New(sha256.New, []byte(r.auth.Secret))
+	_, _ = mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func secureCookie(req *http.Request) bool {
+	return req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func decode(w http.ResponseWriter, req *http.Request, out any) bool {
