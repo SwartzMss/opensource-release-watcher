@@ -249,6 +249,98 @@ v1.2.3 > v1.2.2
 v2.0.0 > v1.9.9
 ```
 
+## 运行与部署
+
+项目脚本集中在 `scripts/` 目录。
+
+### 环境配置
+
+复制示例配置后按实际环境修改：
+
+```bash
+cp .env.example .env
+```
+
+常用配置项：
+
+| 配置项 | 说明 |
+| --- | --- |
+| `SERVER_ADDR` | 后端监听地址，例如 `127.0.0.1:8000` |
+| `DB_PATH` | SQLite 数据库文件路径 |
+| `GITHUB_TOKEN` | GitHub API Token，可空 |
+| `CHECK_INTERVAL` | 定时检查间隔，例如 `6h` |
+| `SMTP_*` | 邮件发送配置；留空时不实际发送邮件 |
+| `DOMAIN` | nginx 对外域名 |
+| `EXTERNAL_PORT` | nginx HTTPS 对外端口 |
+| `CERT_PATH` | TLS 证书路径 |
+| `KEY_PATH` | TLS 私钥路径 |
+| `CLIENT_MAX_BODY_SIZE` | nginx 请求体大小限制 |
+
+`.env` 包含真实域名、证书路径和密钥，不应提交；仓库只提交脱敏后的 `.env.example`。
+
+### 本地开发
+
+```bash
+scripts/deploy.sh dev
+```
+
+默认会启动：
+
+- 后端：`127.0.0.1:8000`
+- 前端：`http://127.0.0.1:5173`
+
+可通过环境变量覆盖：
+
+```bash
+SERVER_ADDR=127.0.0.1:18080 DEV_PORT=5174 scripts/deploy.sh dev
+```
+
+### 编译构建
+
+```bash
+scripts/build.sh
+```
+
+或使用统一入口：
+
+```bash
+scripts/deploy.sh build
+```
+
+构建产物：
+
+- 后端二进制：`bin/opensource-release-watcher-server`
+- 前端静态资源：`frontend/dist`
+
+### 生产部署
+
+部署脚本会构建后端和前端、写入 systemd service、同步静态资源到 nginx 目录，并生成 nginx HTTPS 配置。
+
+```bash
+sudo scripts/deploy.sh start
+```
+
+常用命令：
+
+```bash
+sudo scripts/deploy.sh restart
+sudo scripts/deploy.sh stop
+sudo scripts/deploy.sh status
+sudo scripts/deploy.sh clean-static
+sudo scripts/deploy.sh uninstall
+```
+
+可选覆盖项：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ENV_FILE` | `.env` | 要加载的环境变量文件 |
+| `STATIC_DEST` | `/var/www/opensource-release-watcher` | nginx 静态资源目录 |
+| `SERVICE_NAME` | `opensource-release-watcher` | systemd/nginx 配置名 |
+| `SERVICE_USER` | 当前 sudo 发起用户 | systemd 运行用户 |
+| `SERVICE_GROUP` | 同 `SERVICE_USER` | systemd 运行用户组 |
+| `NGINX_SERVICE` | `nginx` | nginx systemd 服务名 |
+
 ## 项目定位
 
 本项目不是包管理器，也不是自动升级工具。
