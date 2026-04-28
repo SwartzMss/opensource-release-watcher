@@ -171,12 +171,12 @@ Go HTTP API Server + Scheduler + SQLite + SMTP
 
 ```text
 opensource-release-watcher/
-├── web/
+├── frontend/
 │   ├── src/
 │   ├── public/
 │   ├── package.json
 │   └── vite.config.ts
-├── server/
+├── backend/
 │   ├── cmd/
 │   │   └── server/
 │   │       └── main.go
@@ -199,7 +199,7 @@ opensource-release-watcher/
 
 ## 模块说明
 
-### web
+### frontend
 
 前端管理界面，推荐使用 React + TypeScript + Vite + Ant Design。
 
@@ -211,7 +211,7 @@ opensource-release-watcher/
 - 通知记录查看
 - 手动触发检查任务
 
-### server
+### backend
 
 后端服务，负责提供 HTTP API、执行定时检查任务、保存状态以及发送通知。
 

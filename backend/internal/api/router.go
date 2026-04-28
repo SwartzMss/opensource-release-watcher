@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"opensource-release-watcher/server/internal/service"
-	"opensource-release-watcher/server/internal/storage"
+	"opensource-release-watcher/backend/internal/service"
+	"opensource-release-watcher/backend/internal/storage"
 )
 
 type Router struct {

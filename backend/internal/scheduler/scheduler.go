@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"opensource-release-watcher/server/internal/service"
+	"opensource-release-watcher/backend/internal/service"
 )
 
 type Scheduler struct {

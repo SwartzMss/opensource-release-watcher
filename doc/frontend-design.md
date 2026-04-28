@@ -14,7 +14,7 @@
 前端目录建议：
 
 ```text
-web/
+frontend/
 ├── src/
 │   ├── api/
 │   ├── components/

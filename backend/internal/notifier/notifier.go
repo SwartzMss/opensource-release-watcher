@@ -5,7 +5,7 @@ import (
 	"net/smtp"
 	"strings"
 
-	"opensource-release-watcher/server/internal/config"
+	"opensource-release-watcher/backend/internal/config"
 )
 
 type Message struct {

@@ -1,7 +1,11 @@
 node_modules/
 dist/
-web/node_modules/
-web/dist/
+bin/
+.env
+.env.*
+!.env.example
+frontend/node_modules/
+frontend/dist/
 *.tsbuildinfo
 data/
 *.db

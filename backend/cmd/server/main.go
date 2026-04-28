@@ -5,14 +5,14 @@ import (
 	"log"
 	"net/http"
 
-	"opensource-release-watcher/server/internal/api"
-	"opensource-release-watcher/server/internal/checker"
-	"opensource-release-watcher/server/internal/config"
-	"opensource-release-watcher/server/internal/github"
-	"opensource-release-watcher/server/internal/notifier"
-	"opensource-release-watcher/server/internal/scheduler"
-	"opensource-release-watcher/server/internal/service"
-	"opensource-release-watcher/server/internal/storage"
+	"opensource-release-watcher/backend/internal/api"
+	"opensource-release-watcher/backend/internal/checker"
+	"opensource-release-watcher/backend/internal/config"
+	"opensource-release-watcher/backend/internal/github"
+	"opensource-release-watcher/backend/internal/notifier"
+	"opensource-release-watcher/backend/internal/scheduler"
+	"opensource-release-watcher/backend/internal/service"
+	"opensource-release-watcher/backend/internal/storage"
 )
 
 func main() {

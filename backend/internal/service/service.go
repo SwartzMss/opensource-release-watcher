@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"opensource-release-watcher/server/internal/checker"
-	"opensource-release-watcher/server/internal/notifier"
-	"opensource-release-watcher/server/internal/storage"
+	"opensource-release-watcher/backend/internal/checker"
+	"opensource-release-watcher/backend/internal/notifier"
+	"opensource-release-watcher/backend/internal/storage"
 )
 
 type Service struct {

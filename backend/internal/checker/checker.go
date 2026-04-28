@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"opensource-release-watcher/server/internal/github"
-	"opensource-release-watcher/server/internal/storage"
-	"opensource-release-watcher/server/internal/version"
+	"opensource-release-watcher/backend/internal/github"
+	"opensource-release-watcher/backend/internal/storage"
+	"opensource-release-watcher/backend/internal/version"
 )
 
 type GitHubClient interface {

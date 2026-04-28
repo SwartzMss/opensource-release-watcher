@@ -14,7 +14,7 @@
 推荐目录：
 
 ```text
-server/
+backend/
 ├── cmd/
 │   └── server/
 │       └── main.go

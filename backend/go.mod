@@ -1,4 +1,4 @@
-module opensource-release-watcher/server
+module opensource-release-watcher/backend
 
 go 1.25
 
