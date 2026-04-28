@@ -1,0 +1,682 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Button,
+  Card,
+  Descriptions,
+  Drawer,
+  Form,
+  Input,
+  Layout,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  message,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import type { FormInstance } from 'antd';
+import { api } from './api/client';
+import type {
+  CheckRecord,
+  ComponentItem,
+  DashboardSummary,
+  NotificationRecord,
+  Subscriber,
+  SystemRun,
+} from './types/domain';
+
+type PageKey = 'dashboard' | 'components' | 'subscribers' | 'checks' | 'notifications';
+
+export function App() {
+  const [page, setPage] = useState<PageKey>('dashboard');
+  return (
+    <Layout className="shell">
+      <Layout.Sider width={260} className="side">
+        <div className="brand">
+          <span className="brand-mark">OR</span>
+          <div>
+            <strong>Release Watcher</strong>
+            <small>开源组件版本感知</small>
+          </div>
+        </div>
+        <nav className="nav">
+          {[
+            ['dashboard', '仪表盘'],
+            ['components', '组件管理'],
+            ['subscribers', '订阅人管理'],
+            ['checks', '检查记录'],
+            ['notifications', '通知记录'],
+          ].map(([key, label]) => (
+            <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      </Layout.Sider>
+      <Layout.Content className="content">
+        {page === 'dashboard' && <Dashboard />}
+        {page === 'components' && <Components />}
+        {page === 'subscribers' && <Subscribers />}
+        {page === 'checks' && <Checks />}
+        {page === 'notifications' && <Notifications />}
+      </Layout.Content>
+    </Layout>
+  );
+}
+
+function Dashboard() {
+  const [summary, setSummary] = useState<DashboardSummary>();
+  const [runs, setRuns] = useState<SystemRun[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [nextSummary, nextRuns] = await Promise.all([api.dashboard(), api.systemRuns()]);
+      setSummary(nextSummary);
+      setRuns(nextRuns.items);
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function runChecks() {
+    setLoading(true);
+    try {
+      await api.runChecks();
+      message.success('全量检查已完成');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const cards = [
+    ['组件总数', summary?.component_total ?? 0],
+    ['启用检查', summary?.enabled_component_total ?? 0],
+    ['存在更新', summary?.components_with_update ?? 0],
+    ['检查失败', summary?.last_check_failed_total ?? 0],
+    ['通知失败', summary?.notification_failed_total ?? 0],
+  ];
+
+  return (
+    <section>
+      <PageHeader title="仪表盘" description="查看开源组件监控整体状态。" action={<Button type="primary" loading={loading} onClick={runChecks}>手动全量检查</Button>} />
+      <div className="metric-grid">
+        {cards.map(([label, value]) => (
+          <Card key={label} className="metric">
+            <small>{label}</small>
+            <strong>{value}</strong>
+          </Card>
+        ))}
+      </div>
+      <Card title="最近全量检查">
+        <Table
+          rowKey="id"
+          size="small"
+          pagination={false}
+          dataSource={runs}
+          columns={[
+            { title: '触发方式', dataIndex: 'trigger_type' },
+            { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+            { title: '总数', dataIndex: 'total_count' },
+            { title: '成功', dataIndex: 'success_count' },
+            { title: '失败', dataIndex: 'failed_count' },
+            { title: '开始时间', dataIndex: 'started_at', render: formatTime },
+            { title: '结束时间', dataIndex: 'finished_at', render: formatTime },
+          ]}
+        />
+      </Card>
+    </section>
+  );
+}
+
+function Components() {
+  const [items, setItems] = useState<ComponentItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<ComponentItem | null>(null);
+  const [subscribersFor, setSubscribersFor] = useState<ComponentItem | null>(null);
+  const [form] = Form.useForm<Partial<ComponentItem>>();
+
+  async function load() {
+    setLoading(true);
+    try {
+      setItems((await api.components()).items);
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  function openEditor(item?: ComponentItem) {
+    setEditing(item ?? emptyComponent());
+    form.setFieldsValue(item ?? emptyComponent());
+  }
+
+  async function saveComponent(values: Partial<ComponentItem>) {
+    try {
+      if (editing?.id) {
+        await api.updateComponent(editing.id, values);
+        message.success('组件已更新');
+      } else {
+        await api.createComponent(values);
+        message.success('组件已创建');
+      }
+      setEditing(null);
+      form.resetFields();
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  async function toggleEnabled(row: ComponentItem, enabled: boolean) {
+    try {
+      await api.updateComponent(row.id, { ...row, enabled });
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  async function remove(id: number) {
+    try {
+      await api.deleteComponent(id);
+      message.success('组件已删除');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  async function check(id: number) {
+    try {
+      await api.checkComponent(id);
+      message.success('检查完成');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  const columns: ColumnsType<ComponentItem> = [
+    { title: '组件', dataIndex: 'name' },
+    { title: '仓库', render: (_, row) => <a href={row.repo_url} target="_blank">{row.repo_owner}/{row.repo_name}</a> },
+    { title: '当前版本', dataIndex: 'current_version' },
+    { title: '最新版本', dataIndex: 'latest_version', render: value => value || '-' },
+    { title: '负责人', dataIndex: 'owner_name' },
+    { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggleEnabled(row, checked)} /> },
+    { title: '状态', render: (_, row) => <StatusTag status={row.last_check_status} /> },
+    { title: '检查时间', dataIndex: 'last_checked_at', render: formatTime },
+    {
+      title: '操作',
+      render: (_, row) => (
+        <Space>
+          <Button size="small" onClick={() => void check(row.id)}>检查</Button>
+          <Button size="small" onClick={() => openEditor(row)}>编辑</Button>
+          <Button size="small" onClick={() => setSubscribersFor(row)}>订阅人</Button>
+          <Popconfirm title="删除这个组件？" onConfirm={() => void remove(row.id)}>
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <section>
+      <PageHeader title="组件管理" description="维护开源组件清单和当前内部使用版本。" action={<Button type="primary" onClick={() => openEditor()}>新增组件</Button>} />
+      <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} />
+      <ComponentModal form={form} open={editing !== null} title={editing?.id ? '编辑组件' : '新增组件'} onCancel={() => setEditing(null)} onFinish={saveComponent} />
+      {subscribersFor && <SubscriberDrawer component={subscribersFor} onClose={() => setSubscribersFor(null)} />}
+    </section>
+  );
+}
+
+function Subscribers() {
+  const [components, setComponents] = useState<ComponentItem[]>([]);
+  const [componentId, setComponentId] = useState<number>();
+  const selected = useMemo(() => components.find(item => item.id === componentId), [components, componentId]);
+
+  useEffect(() => {
+    api.components().then(data => {
+      setComponents(data.items);
+      setComponentId(data.items[0]?.id);
+    }).catch(error => message.error(String(error)));
+  }, []);
+
+  return (
+    <section>
+      <PageHeader title="订阅人管理" description="维护组件负责人之外的邮件订阅人。" />
+      <Card className="toolbar-card">
+        <Select
+          showSearch
+          className="component-select"
+          placeholder="选择组件"
+          value={componentId}
+          optionFilterProp="label"
+          onChange={setComponentId}
+          options={components.map(item => ({ label: `${item.name} (${item.repo_owner}/${item.repo_name})`, value: item.id }))}
+        />
+      </Card>
+      {selected && <SubscriberManager component={selected} />}
+    </section>
+  );
+}
+
+function SubscriberDrawer(props: { component: ComponentItem; onClose: () => void }) {
+  return (
+    <Drawer width={760} title={`${props.component.name} 订阅人`} open onClose={props.onClose}>
+      <SubscriberManager component={props.component} />
+    </Drawer>
+  );
+}
+
+function SubscriberManager({ component }: { component: ComponentItem }) {
+  const [items, setItems] = useState<Subscriber[]>([]);
+  const [editing, setEditing] = useState<Subscriber | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [form] = Form.useForm();
+
+  async function load() {
+    setLoading(true);
+    try {
+      setItems(await api.subscribers(component.id));
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [component.id]);
+
+  function openEditor(item?: Subscriber) {
+    const value = item ?? { name: '', email: '', enabled: true };
+    setEditing(value as Subscriber);
+    form.setFieldsValue(value);
+  }
+
+  async function save(values: Partial<Subscriber>) {
+    try {
+      if (editing?.id) {
+        await api.updateSubscriber(editing.id, values);
+        message.success('订阅人已更新');
+      } else {
+        await api.createSubscriber(component.id, values);
+        message.success('订阅人已创建');
+      }
+      setEditing(null);
+      form.resetFields();
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  async function remove(id: number) {
+    try {
+      await api.deleteSubscriber(id);
+      message.success('订阅人已删除');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  async function toggle(row: Subscriber, enabled: boolean) {
+    try {
+      await api.updateSubscriber(row.id, { ...row, enabled });
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  return (
+    <>
+      <div className="table-actions">
+        <Button type="primary" onClick={() => openEditor()}>新增订阅人</Button>
+      </div>
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={items}
+        pagination={false}
+        columns={[
+          { title: '名称', dataIndex: 'name' },
+          { title: '邮箱', dataIndex: 'email' },
+          { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggle(row, checked)} /> },
+          { title: '创建时间', dataIndex: 'created_at', render: formatTime },
+          {
+            title: '操作',
+            render: (_, row) => (
+              <Space>
+                <Button size="small" onClick={() => openEditor(row)}>编辑</Button>
+                <Popconfirm title="删除这个订阅人？" onConfirm={() => void remove(row.id)}>
+                  <Button size="small" danger>删除</Button>
+                </Popconfirm>
+              </Space>
+            ),
+          },
+        ]}
+      />
+      <Modal title={editing?.id ? '编辑订阅人' : '新增订阅人'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>
+        <Form form={form} layout="vertical" onFinish={save} initialValues={{ enabled: true }}>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
+}
+
+function Checks() {
+  const [items, setItems] = useState<CheckRecord[]>([]);
+  const [components, setComponents] = useState<ComponentItem[]>([]);
+  const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
+  const [detail, setDetail] = useState<CheckRecord | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load(nextFilters = filters) {
+    setLoading(true);
+    try {
+      const [records, componentPage] = await Promise.all([api.checkRecords(nextFilters), api.components()]);
+      setItems(records.items);
+      setComponents(componentPage.items);
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function showDetail(id: number) {
+    try {
+      setDetail(await api.checkRecord(id));
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  return (
+    <section>
+      <PageHeader title="检查记录" description="查看每次 GitHub Release/Tag 检查结果。" />
+      <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} includeUpdate />
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={items}
+        columns={[
+          { title: '组件', dataIndex: 'component_name' },
+          { title: '来源', dataIndex: 'source' },
+          { title: '版本变化', render: (_, row) => `${row.previous_version || '-'} -> ${row.latest_version || '-'}` },
+          { title: '是否更新', dataIndex: 'has_update', render: value => value ? <Tag color="orange">有更新</Tag> : <Tag>无</Tag> },
+          { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+          { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
+          { title: '检查时间', dataIndex: 'checked_at', render: formatTime },
+          { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>详情</Button> },
+        ]}
+        scroll={{ x: 1000 }}
+      />
+      <Drawer title="检查详情" width={720} open={detail !== null} onClose={() => setDetail(null)}>
+        {detail && (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
+            <Descriptions.Item label="来源">{detail.source || '-'}</Descriptions.Item>
+            <Descriptions.Item label="版本变化">{detail.previous_version || '-'} -&gt; {detail.latest_version || '-'}</Descriptions.Item>
+            <Descriptions.Item label="状态"><StatusTag status={detail.status} /></Descriptions.Item>
+            <Descriptions.Item label="发布时间">{formatTime(detail.release_published_at)}</Descriptions.Item>
+            <Descriptions.Item label="链接">{detail.release_url ? <a href={detail.release_url} target="_blank">{detail.release_url}</a> : '-'}</Descriptions.Item>
+            <Descriptions.Item label="失败原因">{detail.error_message || '-'}</Descriptions.Item>
+            <Descriptions.Item label="摘要"><pre className="plain-pre">{detail.release_note_summary || '-'}</pre></Descriptions.Item>
+            <Descriptions.Item label="Release Note"><pre className="plain-pre">{detail.release_note || '-'}</pre></Descriptions.Item>
+          </Descriptions>
+        )}
+      </Drawer>
+    </section>
+  );
+}
+
+function Notifications() {
+  const [items, setItems] = useState<NotificationRecord[]>([]);
+  const [components, setComponents] = useState<ComponentItem[]>([]);
+  const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
+  const [detail, setDetail] = useState<NotificationRecord | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load(nextFilters = filters) {
+    setLoading(true);
+    try {
+      const [records, componentPage] = await Promise.all([api.notifications(nextFilters), api.components()]);
+      setItems(records.items);
+      setComponents(componentPage.items);
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function showDetail(id: number) {
+    try {
+      setDetail(await api.notification(id));
+    } catch (error) {
+      message.error(String(error));
+    }
+  }
+
+  return (
+    <section>
+      <PageHeader title="通知记录" description="查看邮件通知发送结果。" />
+      <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} />
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={items}
+        columns={[
+          { title: '组件', dataIndex: 'component_name' },
+          { title: '版本', dataIndex: 'version' },
+          { title: '收件人', dataIndex: 'recipient_email' },
+          { title: '标题', dataIndex: 'subject' },
+          { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+          { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
+          { title: '发送时间', dataIndex: 'sent_at', render: formatTime },
+          { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>正文</Button> },
+        ]}
+        scroll={{ x: 1100 }}
+      />
+      <Drawer title="邮件正文" width={720} open={detail !== null} onClose={() => setDetail(null)}>
+        {detail && (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
+            <Descriptions.Item label="版本">{detail.version}</Descriptions.Item>
+            <Descriptions.Item label="收件人">{detail.recipient_email}</Descriptions.Item>
+            <Descriptions.Item label="标题">{detail.subject}</Descriptions.Item>
+            <Descriptions.Item label="状态"><StatusTag status={detail.status} /></Descriptions.Item>
+            <Descriptions.Item label="失败原因">{detail.error_message || '-'}</Descriptions.Item>
+            <Descriptions.Item label="正文"><pre className="plain-pre">{detail.body || '-'}</pre></Descriptions.Item>
+          </Descriptions>
+        )}
+      </Drawer>
+    </section>
+  );
+}
+
+function ComponentModal(props: {
+  form: FormInstance<Partial<ComponentItem>>;
+  open: boolean;
+  title: string;
+  onCancel: () => void;
+  onFinish: (values: Partial<ComponentItem>) => void | Promise<void>;
+}) {
+  return (
+    <Modal title={props.title} open={props.open} onCancel={props.onCancel} onOk={() => props.form.submit()} destroyOnHidden>
+      <Form form={props.form} layout="vertical" onFinish={props.onFinish} initialValues={{ check_strategy: 'release_first', enabled: true }}>
+        <Form.Item name="name" label="组件名称" rules={[{ required: true }]}>
+          <Input placeholder="protobuf" />
+        </Form.Item>
+        <Space.Compact block>
+          <Form.Item className="compact-item" name="repo_owner" label="GitHub Owner" rules={[{ required: true }]}>
+            <Input placeholder="protocolbuffers" />
+          </Form.Item>
+          <Form.Item className="compact-item" name="repo_name" label="GitHub Repo" rules={[{ required: true }]}>
+            <Input placeholder="protobuf" />
+          </Form.Item>
+        </Space.Compact>
+        <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
+          <Input placeholder="3.20.1" />
+        </Form.Item>
+        <Space.Compact block>
+          <Form.Item className="compact-item" name="owner_name" label="负责人" rules={[{ required: true }]}>
+            <Input placeholder="platform-team" />
+          </Form.Item>
+          <Form.Item className="compact-item" name="owner_email" label="负责人邮箱" rules={[{ required: true, type: 'email' }]}>
+            <Input placeholder="platform@example.com" />
+          </Form.Item>
+        </Space.Compact>
+        <Form.Item name="check_strategy" label="检查策略">
+          <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
+        </Form.Item>
+        <Form.Item name="enabled" label="启用检查" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Form.Item name="notes" label="备注">
+          <Input.TextArea rows={3} />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+function FilterBar(props: {
+  components: ComponentItem[];
+  filters: Record<string, string | number | boolean | undefined>;
+  includeUpdate?: boolean;
+  onChange: (filters: Record<string, string | number | boolean | undefined>) => void;
+}) {
+  function patch(key: string, value: string | number | boolean | undefined) {
+    props.onChange({ ...props.filters, [key]: value });
+  }
+
+  return (
+    <Card className="toolbar-card">
+      <Space wrap>
+        <Select
+          allowClear
+          showSearch
+          className="filter-select"
+          placeholder="组件"
+          value={props.filters.component_id}
+          optionFilterProp="label"
+          onChange={value => patch('component_id', value)}
+          options={props.components.map(item => ({ label: item.name, value: item.id }))}
+        />
+        <Select
+          allowClear
+          className="filter-select"
+          placeholder="状态"
+          value={props.filters.status}
+          onChange={value => patch('status', value)}
+          options={[
+            { label: 'success', value: 'success' },
+            { label: 'failed', value: 'failed' },
+            { label: 'sent', value: 'sent' },
+          ]}
+        />
+        {props.includeUpdate && (
+          <Select
+            allowClear
+            className="filter-select"
+            placeholder="是否更新"
+            value={props.filters.has_update}
+            onChange={value => patch('has_update', value)}
+            options={[
+              { label: '有更新', value: true },
+              { label: '无更新', value: false },
+            ]}
+          />
+        )}
+      </Space>
+    </Card>
+  );
+}
+
+function PageHeader(props: { title: string; description: string; action?: ReactNode }) {
+  return (
+    <header className="page-header">
+      <div>
+        <h1>{props.title}</h1>
+        <p>{props.description}</p>
+      </div>
+      {props.action}
+    </header>
+  );
+}
+
+function StatusTag({ status }: { status?: string }) {
+  if (status === 'success' || status === 'sent') return <Tag color="green">{status}</Tag>;
+  if (status === 'failed') return <Tag color="red">{status}</Tag>;
+  if (status === 'running') return <Tag color="blue">{status}</Tag>;
+  if (status === 'skipped') return <Tag>{status}</Tag>;
+  return <Tag>未检查</Tag>;
+}
+
+function formatTime(value?: string) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString();
+}
+
+function emptyComponent(): ComponentItem {
+  return {
+    id: 0,
+    name: '',
+    repo_owner: '',
+    repo_name: '',
+    repo_url: '',
+    current_version: '',
+    latest_version: '',
+    owner_name: '',
+    owner_email: '',
+    check_strategy: 'release_first',
+    enabled: true,
+    last_check_status: '',
+    last_check_error: '',
+    notes: '',
+    created_at: '',
+    updated_at: '',
+  };
+}

@@ -1,0 +1,92 @@
+package checker
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"opensource-release-watcher/server/internal/github"
+	"opensource-release-watcher/server/internal/storage"
+	"opensource-release-watcher/server/internal/version"
+)
+
+type GitHubClient interface {
+	LatestRelease(ctx context.Context, owner, repo string) (*github.ReleaseInfo, error)
+	LatestTag(ctx context.Context, owner, repo string) (*github.ReleaseInfo, error)
+}
+
+type Checker struct {
+	github GitHubClient
+}
+
+func New(github GitHubClient) *Checker {
+	return &Checker{github: github}
+}
+
+func (c *Checker) Check(ctx context.Context, component storage.Component) storage.CheckRecord {
+	record := storage.CheckRecord{
+		ComponentID:     component.ID,
+		PreviousVersion: component.LastSeenVersion,
+		Status:          "success",
+		CheckedAt:       time.Now().UTC(),
+	}
+	if record.PreviousVersion == "" {
+		record.PreviousVersion = component.CurrentVersion
+	}
+	if !component.Enabled {
+		record.Status = "skipped"
+		return record
+	}
+
+	info, err := c.fetchLatest(ctx, component)
+	if err != nil {
+		record.Status = "failed"
+		record.ErrorMessage = err.Error()
+		return record
+	}
+	record.Source = info.Source
+	record.LatestVersion = info.Version
+	record.ReleaseTitle = info.Title
+	record.ReleaseURL = info.URL
+	record.ReleasePublishedAt = info.PublishedAt
+	record.ReleaseNote = info.Note
+	record.ReleaseNoteSummary = summarize(info.Note)
+	record.HasUpdate = version.IsNewer(info.Version, record.PreviousVersion)
+	return record
+}
+
+func (c *Checker) fetchLatest(ctx context.Context, component storage.Component) (*github.ReleaseInfo, error) {
+	if component.CheckStrategy == "tag_only" {
+		return c.github.LatestTag(ctx, component.RepoOwner, component.RepoName)
+	}
+	release, err := c.github.LatestRelease(ctx, component.RepoOwner, component.RepoName)
+	if err == nil {
+		return release, nil
+	}
+	tag, tagErr := c.github.LatestTag(ctx, component.RepoOwner, component.RepoName)
+	if tagErr == nil {
+		return tag, nil
+	}
+	return nil, errors.Join(err, tagErr)
+}
+
+func summarize(note string) string {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return ""
+	}
+	lines := strings.Split(note, "\n")
+	kept := make([]string, 0, 5)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		kept = append(kept, line)
+		if len(kept) == 5 {
+			break
+		}
+	}
+	return strings.Join(kept, "\n")
+}

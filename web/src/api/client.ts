@@ -1,0 +1,74 @@
+import type {
+  ApiResponse,
+  CheckRecord,
+  ComponentItem,
+  DashboardSummary,
+  NotificationRecord,
+  PageData,
+  Subscriber,
+  SystemRun,
+} from '../types/domain';
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    ...init,
+  });
+  const payload = (await response.json()) as ApiResponse<T>;
+  if (!response.ok || payload.code !== 0) {
+    throw new Error(payload.message || `request failed: ${response.status}`);
+  }
+  return payload.data;
+}
+
+export const api = {
+  dashboard: () => request<DashboardSummary>('/api/dashboard/summary'),
+  components: (params?: Record<string, string | number | boolean | undefined>) =>
+    request<PageData<ComponentItem>>(`/api/components?${query({ page: 1, page_size: 100, ...params })}`),
+  createComponent: (component: Partial<ComponentItem>) =>
+    request<ComponentItem>('/api/components', {
+      method: 'POST',
+      body: JSON.stringify(component),
+    }),
+  updateComponent: (id: number, component: Partial<ComponentItem>) =>
+    request<ComponentItem>(`/api/components/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(component),
+    }),
+  deleteComponent: (id: number) =>
+    request<{ deleted: boolean }>(`/api/components/${id}`, { method: 'DELETE' }),
+  checkComponent: (id: number) =>
+    request<CheckRecord>(`/api/components/${id}/check`, { method: 'POST' }),
+  runChecks: () => request('/api/checks/run', { method: 'POST' }),
+  systemRuns: () => request<PageData<SystemRun>>('/api/system-runs?page=1&page_size=10'),
+  subscribers: (componentId: number) =>
+    request<Subscriber[]>(`/api/components/${componentId}/subscribers`),
+  createSubscriber: (componentId: number, subscriber: Partial<Subscriber>) =>
+    request<Subscriber>(`/api/components/${componentId}/subscribers`, {
+      method: 'POST',
+      body: JSON.stringify(subscriber),
+    }),
+  updateSubscriber: (id: number, subscriber: Partial<Subscriber>) =>
+    request<Subscriber>(`/api/subscribers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(subscriber),
+    }),
+  deleteSubscriber: (id: number) =>
+    request<{ deleted: boolean }>(`/api/subscribers/${id}`, { method: 'DELETE' }),
+  checkRecords: (params?: Record<string, string | number | boolean | undefined>) =>
+    request<PageData<CheckRecord>>(`/api/check-records?${query({ page: 1, page_size: 50, ...params })}`),
+  checkRecord: (id: number) => request<CheckRecord>(`/api/check-records/${id}`),
+  notifications: (params?: Record<string, string | number | boolean | undefined>) =>
+    request<PageData<NotificationRecord>>(`/api/notification-records?${query({ page: 1, page_size: 50, ...params })}`),
+  notification: (id: number) => request<NotificationRecord>(`/api/notification-records/${id}`),
+};
+
+function query(params: Record<string, string | number | boolean | undefined>) {
+  const values = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      values.set(key, String(value));
+    }
+  });
+  return values.toString();
+}
