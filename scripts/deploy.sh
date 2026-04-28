@@ -32,6 +32,30 @@ require_cmd() {
   fi
 }
 
+setup_user_toolchain() {
+  if [[ -n "$ORIG_HOME" ]]; then
+    export HOME="$ORIG_HOME"
+    export PATH="/usr/local/go/bin:$ORIG_HOME/go/bin:$PATH"
+    if [[ -s "$ORIG_HOME/.nvm/nvm.sh" ]]; then
+      export NVM_DIR="${NVM_DIR:-$ORIG_HOME/.nvm}"
+      # shellcheck disable=SC1090
+      source "$ORIG_HOME/.nvm/nvm.sh"
+    fi
+  fi
+}
+
+run_as_original_user() {
+  if [[ ${EUID:-$(id -u)} -eq 0 && "$ORIG_USER" != "root" ]]; then
+    sudo -H -u "$ORIG_USER" env \
+      HOME="$ORIG_HOME" \
+      PATH="$PATH" \
+      GOCACHE="${GOCACHE:-/tmp/go-build}" \
+      "$@"
+  else
+    "$@"
+  fi
+}
+
 load_env_file
 require_cmd bash
 
@@ -45,15 +69,16 @@ shift || true
 
 case "$ACTION" in
   dev|build)
-    require_cmd go
-    require_cmd npm
+    setup_user_toolchain
     ;;
-  install|start|stop|restart|status|clean-static|uninstall)
+  install|start|restart)
     ensure_root
-    require_cmd go
-    require_cmd npm
+    setup_user_toolchain
     require_cmd nginx
     require_cmd rsync
+    ;;
+  stop|status|clean-static|uninstall)
+    ensure_root
     ;;
   *)
     usage
@@ -68,15 +93,10 @@ SERVER_ADDR="${SERVER_ADDR:-127.0.0.1:8000}"
 DB_PATH="${DB_PATH:-$ROOT/data/watcher.db}"
 
 build() {
-  if [[ -n "$ORIG_HOME" ]]; then
-    export HOME="$ORIG_HOME"
-    if [[ -s "$ORIG_HOME/.nvm/nvm.sh" ]]; then
-      export NVM_DIR="${NVM_DIR:-$ORIG_HOME/.nvm}"
-      # shellcheck disable=SC1090
-      source "$ORIG_HOME/.nvm/nvm.sh"
-    fi
-  fi
-  bash "$ROOT/scripts/build.sh"
+  setup_user_toolchain
+  require_cmd go
+  require_cmd npm
+  run_as_original_user bash "$ROOT/scripts/build.sh"
 }
 
 dev() {
@@ -96,6 +116,8 @@ dev() {
   echo "==> Starting backend on ${SERVER_ADDR}"
   (
     cd "$ROOT/backend"
+    setup_user_toolchain
+    require_cmd go
     GOCACHE="${GOCACHE:-/tmp/go-build}" SERVER_ADDR="$SERVER_ADDR" DB_PATH="$DB_PATH" go run ./cmd/server
   ) &
   server_pid=$!
@@ -105,6 +127,8 @@ dev() {
   echo "==> Starting frontend at http://${host}:${port}"
   (
     cd "$ROOT/frontend"
+    setup_user_toolchain
+    require_cmd npm
     if [[ ! -x node_modules/.bin/vite ]]; then
       if [[ -f package-lock.json ]]; then
         npm ci
