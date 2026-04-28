@@ -330,6 +330,25 @@ sudo scripts/deploy.sh clean-static
 sudo scripts/deploy.sh uninstall
 ```
 
+查看后端服务日志：
+
+```bash
+sudo journalctl -u opensource-release-watcher.service -f
+```
+
+查看最近 100 行日志：
+
+```bash
+sudo journalctl -u opensource-release-watcher.service -n 100 --no-pager
+```
+
+查看 nginx 状态和错误日志：
+
+```bash
+sudo systemctl status nginx --no-pager
+sudo tail -n 100 /var/log/nginx/error.log
+```
+
 可选覆盖项：
 
 | 变量 | 默认值 | 说明 |

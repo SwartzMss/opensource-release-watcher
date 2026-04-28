@@ -495,11 +495,11 @@ func (s *Store) DashboardSummary(ctx context.Context) (*DashboardSummary, error)
 			return nil, err
 		}
 	}
-	var lastFullCheckAt sql.NullTime
+	var lastFullCheckAt any
 	if err := s.db.QueryRowContext(ctx, `SELECT MAX(started_at) FROM system_runs`).Scan(&lastFullCheckAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	summary.LastFullCheckAt = nullTimePtr(lastFullCheckAt)
+	summary.LastFullCheckAt = timePtr(lastFullCheckAt)
 	return &summary, nil
 }
 
@@ -583,6 +583,42 @@ func boolInt(value bool) int {
 func nullTimePtr(value sql.NullTime) *time.Time {
 	if value.Valid {
 		return &value.Time
+	}
+	return nil
+}
+
+func timePtr(value any) *time.Time {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		return &typed
+	case string:
+		return parseTimePtr(typed)
+	case []byte:
+		return parseTimePtr(string(typed))
+	}
+	return nil
+}
+
+func parseTimePtr(value string) *time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return &parsed
+		}
 	}
 	return nil
 }
