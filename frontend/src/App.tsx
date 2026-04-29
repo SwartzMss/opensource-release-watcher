@@ -16,6 +16,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -297,17 +298,25 @@ function Components() {
     { title: '当前版本', dataIndex: 'current_version' },
     { title: '最新版本', dataIndex: 'latest_version', render: value => value || '-' },
     { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggleEnabled(row, checked)} /> },
-    { title: '状态', render: (_, row) => <StatusTag status={row.last_check_status} /> },
+    { title: '状态', render: (_, row) => <ComponentStatusLight status={row.last_check_status} /> },
     { title: '检查时间', dataIndex: 'last_checked_at', render: formatTime },
     {
       title: '操作',
       render: (_, row) => (
-        <Space>
-          <Button size="small" onClick={() => void check(row.id)}>检查</Button>
-          <Button size="small" onClick={() => openEditor(row)}>编辑</Button>
-          <Button size="small" onClick={() => setSubscribersFor(row)}>订阅人</Button>
+        <Space className="component-actions">
+          <Tooltip title="检查">
+            <Button aria-label="检查" className="icon-action" size="small" shape="circle" onClick={() => void check(row.id)}>↻</Button>
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
+          </Tooltip>
+          <Tooltip title="订阅人">
+            <Button aria-label="订阅人" className="icon-action" size="small" shape="circle" onClick={() => setSubscribersFor(row)}>@</Button>
+          </Tooltip>
           <Popconfirm title="删除这个组件？" onConfirm={() => void remove(row.id)}>
-            <Button size="small" danger>删除</Button>
+            <Tooltip title="删除">
+              <Button aria-label="删除" className="icon-action" size="small" shape="circle" danger>×</Button>
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -445,10 +454,14 @@ function SubscriberManager({ component }: { component: ComponentItem }) {
           {
             title: '操作',
             render: (_, row) => (
-              <Space>
-                <Button size="small" onClick={() => openEditor(row)}>编辑</Button>
+              <Space className="subscriber-actions">
+                <Tooltip title="编辑">
+                  <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
+                </Tooltip>
                 <Popconfirm title="删除这个订阅人？" onConfirm={() => void remove(row.id)}>
-                  <Button size="small" danger>删除</Button>
+                  <Tooltip title="删除">
+                    <Button aria-label="删除" className="icon-action" size="small" shape="circle" danger>×</Button>
+                  </Tooltip>
                 </Popconfirm>
               </Space>
             ),
@@ -800,6 +813,24 @@ function StatusTag({ status }: { status?: string }) {
   if (status === 'running') return <Tag color="blue">{status}</Tag>;
   if (status === 'skipped') return <Tag>{status}</Tag>;
   return <Tag>未检查</Tag>;
+}
+
+function ComponentStatusLight({ status }: { status?: string }) {
+  const meta = componentStatusMeta(status);
+  return (
+    <span className={`status-light status-light-${meta.type}`}>
+      <span className="status-light-dot" />
+      <span>{meta.label}</span>
+    </span>
+  );
+}
+
+function componentStatusMeta(status?: string) {
+  if (status === 'success') return { type: 'success', label: '成功' };
+  if (status === 'failed') return { type: 'failed', label: '失败' };
+  if (status === 'running') return { type: 'running', label: '检查中' };
+  if (status === 'skipped') return { type: 'neutral', label: '已跳过' };
+  return { type: 'neutral', label: '未检查' };
 }
 
 function formatTime(value?: string) {

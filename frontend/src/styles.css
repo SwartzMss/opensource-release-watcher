@@ -201,6 +201,55 @@ a {
   margin-bottom: 12px;
 }
 
+.status-light {
+  align-items: center;
+  color: #4c4942;
+  display: inline-flex;
+  gap: 7px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-light-dot {
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(76, 73, 66, 0.08);
+  display: inline-block;
+  height: 9px;
+  width: 9px;
+}
+
+.status-light-success .status-light-dot {
+  background: #1f9d55;
+}
+
+.status-light-failed .status-light-dot {
+  background: #d64545;
+}
+
+.status-light-running .status-light-dot {
+  background: #2d7dd2;
+}
+
+.status-light-neutral .status-light-dot {
+  background: #9a958b;
+}
+
+.component-actions {
+  min-width: 136px;
+}
+
+.subscriber-actions {
+  min-width: 64px;
+}
+
+.icon-action {
+  font-size: 17px;
+  font-weight: 700;
+  height: 28px;
+  line-height: 1;
+  width: 28px;
+}
+
 .plain-pre {
   margin: 0;
   max-height: 420px;
