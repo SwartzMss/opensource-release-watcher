@@ -200,6 +200,7 @@ function Dashboard() {
           size="small"
           pagination={false}
           dataSource={runs}
+          scroll={{ x: 780 }}
           columns={[
             { title: '触发方式', dataIndex: 'trigger_type' },
             { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
@@ -355,7 +356,7 @@ function Subscribers() {
 
 function SubscriberDrawer(props: { component: ComponentItem; onClose: () => void }) {
   return (
-    <Drawer width={760} title={`${props.component.name} 订阅人`} open onClose={props.onClose}>
+    <Drawer width="min(760px, 100vw)" title={`${props.component.name} 订阅人`} open onClose={props.onClose}>
       <SubscriberManager component={props.component} />
     </Drawer>
   );
@@ -434,6 +435,7 @@ function SubscriberManager({ component }: { component: ComponentItem }) {
         loading={loading}
         dataSource={items}
         pagination={false}
+        scroll={{ x: 720 }}
         columns={[
           { title: '名称', dataIndex: 'name' },
           { title: '邮箱', dataIndex: 'email' },
@@ -521,7 +523,7 @@ function Checks() {
         ]}
         scroll={{ x: 1000 }}
       />
-      <Drawer title="检查详情" width={720} open={detail !== null} onClose={() => setDetail(null)}>
+      <Drawer title="检查详情" width="min(720px, 100vw)" open={detail !== null} onClose={() => setDetail(null)}>
         {detail && (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
@@ -592,7 +594,7 @@ function Notifications() {
         ]}
         scroll={{ x: 1100 }}
       />
-      <Drawer title="邮件正文" width={720} open={detail !== null} onClose={() => setDetail(null)}>
+      <Drawer title="邮件正文" width="min(720px, 100vw)" open={detail !== null} onClose={() => setDetail(null)}>
         {detail && (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
