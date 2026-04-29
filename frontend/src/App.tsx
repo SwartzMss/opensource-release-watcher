@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   Button,
@@ -12,6 +12,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -618,9 +619,73 @@ function ComponentModal(props: {
   onCancel: () => void;
   onFinish: (values: Partial<ComponentItem>) => void | Promise<void>;
 }) {
+  const autoFilledNameRef = useRef('');
+  const autoFilledVersionRef = useRef('');
+  const latestVersionRequestRef = useRef(0);
+  const [latestVersionLoading, setLatestVersionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!props.open) {
+      autoFilledNameRef.current = '';
+      autoFilledVersionRef.current = '';
+      latestVersionRequestRef.current += 1;
+      setLatestVersionLoading(false);
+    }
+  }, [props.open]);
+
+  function handleValuesChange(changed: Partial<ComponentItem>, values: Partial<ComponentItem>) {
+    if (changed.name !== undefined && changed.name !== autoFilledNameRef.current) {
+      autoFilledNameRef.current = '';
+    }
+    if (changed.current_version !== undefined && changed.current_version !== autoFilledVersionRef.current) {
+      autoFilledVersionRef.current = '';
+    }
+
+    if (changed.repo_url !== undefined) {
+      const parsedName = parseGitHubRepoName(changed.repo_url);
+      const currentName = values.name?.trim() ?? '';
+      if (parsedName && (!currentName || currentName === autoFilledNameRef.current)) {
+        autoFilledNameRef.current = parsedName;
+        props.form.setFieldValue('name', parsedName);
+      }
+    }
+
+    if (changed.repo_url !== undefined || changed.check_strategy !== undefined) {
+      void fetchLatestVersion(values);
+    }
+  }
+
+  async function fetchLatestVersion(values: Partial<ComponentItem>) {
+    const repoURL = values.repo_url?.trim();
+    if (!repoURL || !parseGitHubRepoName(repoURL)) return;
+
+    const requestID = latestVersionRequestRef.current + 1;
+    latestVersionRequestRef.current = requestID;
+    setLatestVersionLoading(true);
+    try {
+      const info = await api.latestComponentVersion({
+        repo_url: repoURL,
+        check_strategy: values.check_strategy ?? 'release_first',
+      });
+      if (latestVersionRequestRef.current !== requestID) return;
+
+      const currentVersion = props.form.getFieldValue('current_version')?.trim() ?? '';
+      if (info.version && (!currentVersion || currentVersion === autoFilledVersionRef.current)) {
+        autoFilledVersionRef.current = info.version;
+        props.form.setFieldValue('current_version', info.version);
+      }
+    } catch {
+      // Users can still enter the current version manually when GitHub lookup is unavailable.
+    } finally {
+      if (latestVersionRequestRef.current === requestID) {
+        setLatestVersionLoading(false);
+      }
+    }
+  }
+
   return (
     <Modal title={props.title} open={props.open} onCancel={props.onCancel} onOk={() => props.form.submit()} destroyOnHidden>
-      <Form form={props.form} layout="vertical" onFinish={props.onFinish} initialValues={{ check_strategy: 'release_first', enabled: true }}>
+      <Form form={props.form} layout="vertical" onFinish={props.onFinish} onValuesChange={handleValuesChange} initialValues={{ check_strategy: 'release_first', enabled: true }}>
         <Form.Item name="name" label="组件名称" rules={[{ required: true }]}>
           <Input placeholder="protobuf" />
         </Form.Item>
@@ -628,7 +693,7 @@ function ComponentModal(props: {
           <Input placeholder="https://github.com/protocolbuffers/protobuf" />
         </Form.Item>
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
-          <Input placeholder="3.20.1" />
+          <Input placeholder="3.20.1" suffix={latestVersionLoading ? <Spin size="small" /> : undefined} />
         </Form.Item>
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
@@ -642,6 +707,26 @@ function ComponentModal(props: {
       </Form>
     </Modal>
   );
+}
+
+function parseGitHubRepoName(value?: string) {
+  const input = value?.trim();
+  if (!input) return '';
+
+  const sshMatch = input.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+  if (sshMatch?.[2]) return sshMatch[2];
+
+  const normalized = input.match(/^https?:\/\//i) ? input : `https://${input}`;
+  try {
+    const url = new URL(normalized);
+    if (url.hostname.toLowerCase() !== 'github.com') return '';
+
+    const [, , repo] = url.pathname.replace(/\/+$/, '').split('/');
+    return repo?.replace(/\.git$/i, '') ?? '';
+  } catch {
+    const shorthandMatch = input.match(/^[^/\s]+\/([^/\s]+?)(?:\.git)?\/?$/);
+    return shorthandMatch?.[1] ?? '';
+  }
 }
 
 function FilterBar(props: {

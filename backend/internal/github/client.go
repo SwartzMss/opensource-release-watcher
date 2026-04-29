@@ -14,12 +14,12 @@ type Client struct {
 }
 
 type ReleaseInfo struct {
-	Source      string
-	Version     string
-	Title       string
-	URL         string
-	PublishedAt *time.Time
-	Note        string
+	Source      string     `json:"source"`
+	Version     string     `json:"version"`
+	Title       string     `json:"title"`
+	URL         string     `json:"url"`
+	PublishedAt *time.Time `json:"published_at,omitempty"`
+	Note        string     `json:"note"`
 }
 
 func NewClient(token string) *Client {

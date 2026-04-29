@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"opensource-release-watcher/backend/internal/checker"
+	"opensource-release-watcher/backend/internal/github"
 	"opensource-release-watcher/backend/internal/notifier"
 	"opensource-release-watcher/backend/internal/storage"
 )
@@ -40,6 +41,10 @@ func (s *Service) GetComponent(ctx context.Context, id int64) (*storage.Componen
 
 func (s *Service) ListComponents(ctx context.Context, opts storage.ListOptions) ([]storage.Component, int, error) {
 	return s.store.ListComponents(ctx, opts)
+}
+
+func (s *Service) LatestComponentVersion(ctx context.Context, repoURL, checkStrategy string) (*github.ReleaseInfo, error) {
+	return s.checker.Latest(ctx, repoURL, checkStrategy)
 }
 
 func (s *Service) CreateSubscriber(ctx context.Context, sub *storage.Subscriber) error {

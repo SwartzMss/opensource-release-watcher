@@ -58,6 +58,14 @@ func (c *Checker) Check(ctx context.Context, component storage.Component) storag
 	return record
 }
 
+func (c *Checker) Latest(ctx context.Context, repoURL, checkStrategy string) (*github.ReleaseInfo, error) {
+	return c.fetchLatest(ctx, storage.Component{
+		RepoURL:       repoURL,
+		CheckStrategy: checkStrategy,
+		Enabled:       true,
+	})
+}
+
 func (c *Checker) fetchLatest(ctx context.Context, component storage.Component) (*github.ReleaseInfo, error) {
 	owner, repo, ok := parseGitHubURL(component.RepoURL)
 	if !ok {

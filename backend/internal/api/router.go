@@ -60,6 +60,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("GET /api/dashboard/summary", r.dashboardSummary)
 	r.mux.HandleFunc("GET /api/components", r.listComponents)
 	r.mux.HandleFunc("POST /api/components", r.createComponent)
+	r.mux.HandleFunc("GET /api/components/latest-version", r.latestComponentVersion)
 	r.mux.HandleFunc("GET /api/components/{id}", r.getComponent)
 	r.mux.HandleFunc("PUT /api/components/{id}", r.updateComponent)
 	r.mux.HandleFunc("DELETE /api/components/{id}", r.deleteComponent)
@@ -155,6 +156,35 @@ func (r *Router) createComponent(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeStatus(w, http.StatusCreated, item)
+}
+
+func (r *Router) latestComponentVersion(w http.ResponseWriter, req *http.Request) {
+	repoURL := strings.TrimSpace(req.URL.Query().Get("repo_url"))
+	if repoURL == "" {
+		writeError(w, http.StatusBadRequest, errors.New("repo_url is required"))
+		return
+	}
+	if _, _, ok := parseGitHubURL(repoURL); !ok {
+		writeError(w, http.StatusBadRequest, errors.New("repo_url must be a GitHub repository URL"))
+		return
+	}
+	checkStrategy := strings.TrimSpace(req.URL.Query().Get("check_strategy"))
+	if checkStrategy == "" {
+		checkStrategy = "release_first"
+	}
+	if checkStrategy != "release_first" && checkStrategy != "tag_only" {
+		writeError(w, http.StatusBadRequest, errors.New("check_strategy must be release_first or tag_only"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(req.Context(), 20*time.Second)
+	defer cancel()
+	info, err := r.service.LatestComponentVersion(ctx, repoURL, checkStrategy)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeOK(w, info)
 }
 
 func (r *Router) getComponent(w http.ResponseWriter, req *http.Request) {

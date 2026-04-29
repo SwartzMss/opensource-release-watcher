@@ -68,6 +68,15 @@ export interface CheckRecord {
   checked_at: string;
 }
 
+export interface LatestVersionInfo {
+  source: 'release' | 'tag';
+  version: string;
+  title: string;
+  url: string;
+  published_at?: string;
+  note: string;
+}
+
 export interface NotificationRecord {
   id: number;
   component_id: number;

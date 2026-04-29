@@ -4,6 +4,7 @@ import type {
   CheckRecord,
   ComponentItem,
   DashboardSummary,
+  LatestVersionInfo,
   NotificationRecord,
   PageData,
   Subscriber,
@@ -39,6 +40,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(component),
     }),
+  latestComponentVersion: (params: { repo_url: string; check_strategy?: string }) =>
+    request<LatestVersionInfo>(`/api/components/latest-version?${query(params)}`),
   updateComponent: (id: number, component: Partial<ComponentItem>) =>
     request<ComponentItem>(`/api/components/${id}`, {
       method: 'PUT',
