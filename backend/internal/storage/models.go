@@ -5,14 +5,10 @@ import "time"
 type Component struct {
 	ID              int64      `json:"id"`
 	Name            string     `json:"name"`
-	RepoOwner       string     `json:"repo_owner"`
-	RepoName        string     `json:"repo_name"`
 	RepoURL         string     `json:"repo_url"`
 	CurrentVersion  string     `json:"current_version"`
 	LatestVersion   string     `json:"latest_version"`
 	LastSeenVersion string     `json:"last_seen_version"`
-	OwnerName       string     `json:"owner_name"`
-	OwnerEmail      string     `json:"owner_email"`
 	CheckStrategy   string     `json:"check_strategy"`
 	Enabled         bool       `json:"enabled"`
 	LastCheckStatus string     `json:"last_check_status"`

@@ -157,7 +157,7 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 	if err != nil {
 		return err
 	}
-	recipients := uniqueRecipients(component.OwnerEmail, subscribers)
+	recipients := uniqueRecipients(subscribers)
 	subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, record.PreviousVersion, record.LatestVersion)
 	body := buildMailBody(component, record)
 	sendErr := s.notifier.Send(notifier.Message{
@@ -191,7 +191,7 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 	return sendErr
 }
 
-func uniqueRecipients(ownerEmail string, subscribers []storage.Subscriber) []string {
+func uniqueRecipients(subscribers []storage.Subscriber) []string {
 	seen := map[string]bool{}
 	add := func(email string, out *[]string) {
 		email = strings.TrimSpace(email)
@@ -202,7 +202,6 @@ func uniqueRecipients(ownerEmail string, subscribers []storage.Subscriber) []str
 		*out = append(*out, email)
 	}
 	recipients := []string{}
-	add(ownerEmail, &recipients)
 	for _, sub := range subscribers {
 		if sub.Enabled {
 			add(sub.Email, &recipients)
@@ -217,10 +216,9 @@ func buildMailBody(component storage.Component, record storage.CheckRecord) stri
 		publishedAt = record.ReleasePublishedAt.Format(time.RFC3339)
 	}
 	return fmt.Sprintf(`组件名称：%s
-仓库地址：%s/%s
+仓库地址：%s
 当前使用版本：%s
 最新发布版本：%s
-组件负责人：%s
 发布时间：%s
 GitHub 链接：%s
 
@@ -228,8 +226,8 @@ Release Note 摘要：
 %s
 
 建议动作：
-- 请组件负责人评估是否需要升级
+- 请订阅人评估是否需要升级
 - 检查当前项目是否受到影响
 - 如涉及安全修复，建议优先处理
-`, component.Name, component.RepoOwner, component.RepoName, component.CurrentVersion, record.LatestVersion, component.OwnerName, publishedAt, record.ReleaseURL, record.ReleaseNoteSummary)
+`, component.Name, component.RepoURL, component.CurrentVersion, record.LatestVersion, publishedAt, record.ReleaseURL, record.ReleaseNoteSummary)
 }

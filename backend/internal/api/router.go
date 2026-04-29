@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -512,17 +513,14 @@ func validateComponent(item storage.Component) error {
 	if strings.TrimSpace(item.Name) == "" {
 		return errors.New("name is required")
 	}
-	if strings.TrimSpace(item.RepoOwner) == "" {
-		return errors.New("repo_owner is required")
+	if strings.TrimSpace(item.RepoURL) == "" {
+		return errors.New("repo_url is required")
 	}
-	if strings.TrimSpace(item.RepoName) == "" {
-		return errors.New("repo_name is required")
+	if _, _, ok := parseGitHubURL(item.RepoURL); !ok {
+		return errors.New("repo_url must be a GitHub repository URL")
 	}
 	if strings.TrimSpace(item.CurrentVersion) == "" {
 		return errors.New("current_version is required")
-	}
-	if strings.TrimSpace(item.OwnerEmail) == "" {
-		return errors.New("owner_email is required")
 	}
 	if item.CheckStrategy == "" {
 		item.CheckStrategy = "release_first"
@@ -534,9 +532,40 @@ func validateComponent(item storage.Component) error {
 }
 
 func normalizeComponent(item *storage.Component) {
+	item.Name = strings.TrimSpace(item.Name)
+	item.RepoURL = strings.TrimSpace(item.RepoURL)
+	item.CurrentVersion = strings.TrimSpace(item.CurrentVersion)
+	item.Notes = strings.TrimSpace(item.Notes)
+	if owner, repo, ok := parseGitHubURL(item.RepoURL); ok {
+		item.RepoURL = fmt.Sprintf("https://github.com/%s/%s", owner, repo)
+	}
 	if item.CheckStrategy == "" {
 		item.CheckStrategy = "release_first"
 	}
+}
+
+func parseGitHubURL(value string) (string, string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", "", false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return "", "", false
+	}
+	return repoParts(strings.TrimPrefix(parsed.Path, "/"))
+}
+
+func repoParts(path string) (string, string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], trimRepoSuffix(parts[1]), true
+}
+
+func trimRepoSuffix(repo string) string {
+	return strings.TrimSuffix(repo, ".git")
 }
 
 func validateSubscriber(item storage.Subscriber) error {

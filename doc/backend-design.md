@@ -77,11 +77,8 @@ backend/
 ```json
 {
   "name": "protobuf",
-  "repo_owner": "protocolbuffers",
-  "repo_name": "protobuf",
+  "repo_url": "https://github.com/protocolbuffers/protobuf",
   "current_version": "3.20.1",
-  "owner_name": "platform-team",
-  "owner_email": "platform@example.com",
   "check_strategy": "release_first",
   "enabled": true,
   "notes": "C++ protobuf runtime"
@@ -178,7 +175,6 @@ backend/
 - GitHub 仓库。
 - 当前内部使用版本。
 - 最新上游版本。
-- 组件负责人。
 - 发布时间。
 - Release Note 摘要。
 - GitHub 链接。
@@ -186,7 +182,6 @@ backend/
 
 收件人规则：
 
-- 组件负责人邮箱必须接收。
 - 启用状态的订阅人邮箱需要接收。
 - 相同邮箱去重。
 

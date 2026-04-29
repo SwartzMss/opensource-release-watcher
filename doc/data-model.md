@@ -22,14 +22,10 @@
 | --- | --- | --- | --- |
 | id | INTEGER | 是 | 主键 |
 | name | TEXT | 是 | 组件名称 |
-| repo_owner | TEXT | 是 | GitHub owner |
-| repo_name | TEXT | 是 | GitHub repo |
-| repo_url | TEXT | 否 | GitHub 仓库完整地址 |
+| repo_url | TEXT | 是 | GitHub 仓库完整地址 |
 | current_version | TEXT | 是 | 当前内部使用版本 |
 | latest_version | TEXT | 否 | 最近检查到的上游版本 |
 | last_seen_version | TEXT | 否 | 最近已处理版本，用于去重 |
-| owner_name | TEXT | 是 | 负责人名称或团队名称 |
-| owner_email | TEXT | 是 | 负责人邮箱 |
 | check_strategy | TEXT | 是 | 检查策略，`release_first` 或 `tag_only` |
 | enabled | INTEGER | 是 | 是否启用，1 是，0 否 |
 | last_check_status | TEXT | 否 | 最近检查状态，`success`、`failed`、`skipped` |
@@ -42,7 +38,7 @@
 建议约束：
 
 ```sql
-UNIQUE(repo_owner, repo_name)
+UNIQUE(repo_url)
 ```
 
 ### 2.2 subscribers
@@ -142,14 +138,10 @@ FOREIGN KEY(check_record_id) REFERENCES check_records(id)
 CREATE TABLE components (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  repo_owner TEXT NOT NULL,
-  repo_name TEXT NOT NULL,
-  repo_url TEXT,
+  repo_url TEXT NOT NULL,
   current_version TEXT NOT NULL,
   latest_version TEXT,
   last_seen_version TEXT,
-  owner_name TEXT NOT NULL,
-  owner_email TEXT NOT NULL,
   check_strategy TEXT NOT NULL DEFAULT 'release_first',
   enabled INTEGER NOT NULL DEFAULT 1,
   last_check_status TEXT,
@@ -158,7 +150,7 @@ CREATE TABLE components (
   notes TEXT,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
-  UNIQUE(repo_owner, repo_name)
+  UNIQUE(repo_url)
 );
 
 CREATE TABLE subscribers (

@@ -6,14 +6,10 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS components (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  repo_owner TEXT NOT NULL,
-  repo_name TEXT NOT NULL,
-  repo_url TEXT,
+  repo_url TEXT NOT NULL,
   current_version TEXT NOT NULL,
   latest_version TEXT,
   last_seen_version TEXT,
-  owner_name TEXT NOT NULL,
-  owner_email TEXT NOT NULL,
   check_strategy TEXT NOT NULL DEFAULT 'release_first',
   enabled INTEGER NOT NULL DEFAULT 1,
   last_check_status TEXT,
@@ -22,7 +18,7 @@ CREATE TABLE IF NOT EXISTS components (
   notes TEXT,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
-  UNIQUE(repo_owner, repo_name)
+  UNIQUE(repo_url)
 );
 
 CREATE TABLE IF NOT EXISTS subscribers (

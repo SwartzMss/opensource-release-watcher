@@ -238,8 +238,9 @@ function Components() {
   }, []);
 
   function openEditor(item?: ComponentItem) {
-    setEditing(item ?? emptyComponent());
-    form.setFieldsValue(item ?? emptyComponent());
+    const next = item ?? emptyComponent();
+    setEditing(next);
+    form.setFieldsValue(next);
   }
 
   async function saveComponent(values: Partial<ComponentItem>) {
@@ -290,10 +291,9 @@ function Components() {
 
   const columns: ColumnsType<ComponentItem> = [
     { title: '组件', dataIndex: 'name' },
-    { title: '仓库', render: (_, row) => <a href={row.repo_url} target="_blank">{row.repo_owner}/{row.repo_name}</a> },
+    { title: '仓库', render: (_, row) => <a href={row.repo_url} target="_blank">{row.repo_url}</a> },
     { title: '当前版本', dataIndex: 'current_version' },
     { title: '最新版本', dataIndex: 'latest_version', render: value => value || '-' },
-    { title: '负责人', dataIndex: 'owner_name' },
     { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggleEnabled(row, checked)} /> },
     { title: '状态', render: (_, row) => <StatusTag status={row.last_check_status} /> },
     { title: '检查时间', dataIndex: 'last_checked_at', render: formatTime },
@@ -336,7 +336,7 @@ function Subscribers() {
 
   return (
     <section>
-      <PageHeader title="订阅人管理" description="维护组件负责人之外的邮件订阅人。" />
+      <PageHeader title="订阅人管理" description="维护组件版本更新的邮件订阅人。" />
       <Card className="toolbar-card">
         <Select
           showSearch
@@ -345,7 +345,7 @@ function Subscribers() {
           value={componentId}
           optionFilterProp="label"
           onChange={setComponentId}
-          options={components.map(item => ({ label: `${item.name} (${item.repo_owner}/${item.repo_name})`, value: item.id }))}
+          options={components.map(item => ({ label: `${item.name} (${item.repo_url})`, value: item.id }))}
         />
       </Card>
       {selected && <SubscriberManager component={selected} />}
@@ -622,25 +622,12 @@ function ComponentModal(props: {
         <Form.Item name="name" label="组件名称" rules={[{ required: true }]}>
           <Input placeholder="protobuf" />
         </Form.Item>
-        <Space.Compact block>
-          <Form.Item className="compact-item" name="repo_owner" label="GitHub Owner" rules={[{ required: true }]}>
-            <Input placeholder="protocolbuffers" />
-          </Form.Item>
-          <Form.Item className="compact-item" name="repo_name" label="GitHub Repo" rules={[{ required: true }]}>
-            <Input placeholder="protobuf" />
-          </Form.Item>
-        </Space.Compact>
+        <Form.Item name="repo_url" label="GitHub 仓库" rules={[{ required: true }]}>
+          <Input placeholder="https://github.com/protocolbuffers/protobuf" />
+        </Form.Item>
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
           <Input placeholder="3.20.1" />
         </Form.Item>
-        <Space.Compact block>
-          <Form.Item className="compact-item" name="owner_name" label="负责人" rules={[{ required: true }]}>
-            <Input placeholder="platform-team" />
-          </Form.Item>
-          <Form.Item className="compact-item" name="owner_email" label="负责人邮箱" rules={[{ required: true, type: 'email' }]}>
-            <Input placeholder="platform@example.com" />
-          </Form.Item>
-        </Space.Compact>
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
         </Form.Item>
@@ -737,13 +724,9 @@ function emptyComponent(): ComponentItem {
   return {
     id: 0,
     name: '',
-    repo_owner: '',
-    repo_name: '',
     repo_url: '',
     current_version: '',
     latest_version: '',
-    owner_name: '',
-    owner_email: '',
     check_strategy: 'release_first',
     enabled: true,
     last_check_status: '',

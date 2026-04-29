@@ -60,13 +60,9 @@ GET /api/components?page=1&page_size=20&keyword=protobuf&enabled=true
 | --- | --- | --- |
 | id | number | 组件 ID |
 | name | string | 组件名称 |
-| repo_owner | string | GitHub owner |
-| repo_name | string | GitHub repo |
 | repo_url | string | GitHub 仓库地址 |
 | current_version | string | 当前内部使用版本 |
 | latest_version | string | 最近检查到的上游版本 |
-| owner_name | string | 负责人 |
-| owner_email | string | 负责人邮箱 |
 | check_strategy | string | 检查策略 |
 | enabled | boolean | 是否启用 |
 | last_check_status | string | 最近检查状态 |
@@ -84,11 +80,8 @@ POST /api/components
 ```json
 {
   "name": "protobuf",
-  "repo_owner": "protocolbuffers",
-  "repo_name": "protobuf",
+  "repo_url": "https://github.com/protocolbuffers/protobuf",
   "current_version": "3.20.1",
-  "owner_name": "platform-team",
-  "owner_email": "platform@example.com",
   "check_strategy": "release_first",
   "enabled": true,
   "notes": "C++ runtime dependency"

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,11 +49,11 @@ func (s *Store) CreateComponent(ctx context.Context, c *Component) error {
 	c.RepoURL = repoURL(c)
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO components (
-			name, repo_owner, repo_name, repo_url, current_version,
-			owner_name, owner_email, check_strategy, enabled, notes, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.Name, c.RepoOwner, c.RepoName, c.RepoURL, c.CurrentVersion,
-		c.OwnerName, c.OwnerEmail, c.CheckStrategy, boolInt(c.Enabled), c.Notes, now, now,
+			name, repo_url, current_version,
+			check_strategy, enabled, notes, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.Name, c.RepoURL, c.CurrentVersion,
+		c.CheckStrategy, boolInt(c.Enabled), c.Notes, now, now,
 	)
 	if err != nil {
 		return err
@@ -70,11 +69,11 @@ func (s *Store) UpdateComponent(ctx context.Context, c *Component) error {
 	c.RepoURL = repoURL(c)
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE components
-		SET name = ?, repo_owner = ?, repo_name = ?, repo_url = ?, current_version = ?,
-		    owner_name = ?, owner_email = ?, check_strategy = ?, enabled = ?, notes = ?, updated_at = ?
+		SET name = ?, repo_url = ?, current_version = ?,
+		    check_strategy = ?, enabled = ?, notes = ?, updated_at = ?
 		WHERE id = ?`,
-		c.Name, c.RepoOwner, c.RepoName, c.RepoURL, c.CurrentVersion,
-		c.OwnerName, c.OwnerEmail, c.CheckStrategy, boolInt(c.Enabled), c.Notes, now, c.ID,
+		c.Name, c.RepoURL, c.CurrentVersion,
+		c.CheckStrategy, boolInt(c.Enabled), c.Notes, now, c.ID,
 	)
 	if err != nil {
 		return err
@@ -106,8 +105,8 @@ func (s *Store) DeleteComponent(ctx context.Context, id int64) error {
 
 func (s *Store) GetComponent(ctx context.Context, id int64) (*Component, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, repo_owner, repo_name, repo_url, current_version, latest_version,
-		       last_seen_version, owner_name, owner_email, check_strategy, enabled,
+		SELECT id, name, repo_url, current_version, latest_version,
+		       last_seen_version, check_strategy, enabled,
 		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
 		FROM components WHERE id = ?`, id)
 	return scanComponent(row)
@@ -117,9 +116,9 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 	clauses := []string{"1 = 1"}
 	args := []any{}
 	if opts.Keyword != "" {
-		clauses = append(clauses, "(name LIKE ? OR repo_owner LIKE ? OR repo_name LIKE ?)")
+		clauses = append(clauses, "(name LIKE ? OR repo_url LIKE ?)")
 		keyword := "%" + opts.Keyword + "%"
-		args = append(args, keyword, keyword, keyword)
+		args = append(args, keyword, keyword)
 	}
 	if opts.Enabled != nil {
 		clauses = append(clauses, "enabled = ?")
@@ -133,8 +132,8 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, repo_owner, repo_name, repo_url, current_version, latest_version,
-		       last_seen_version, owner_name, owner_email, check_strategy, enabled,
+		SELECT id, name, repo_url, current_version, latest_version,
+		       last_seen_version, check_strategy, enabled,
 		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
 		FROM components WHERE `+where+`
 		ORDER BY updated_at DESC LIMIT ? OFFSET ?`, queryArgs...)
@@ -156,8 +155,8 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 
 func (s *Store) ListEnabledComponents(ctx context.Context) ([]Component, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, repo_owner, repo_name, repo_url, current_version, latest_version,
-		       last_seen_version, owner_name, owner_email, check_strategy, enabled,
+		SELECT id, name, repo_url, current_version, latest_version,
+		       last_seen_version, check_strategy, enabled,
 		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
 		FROM components WHERE enabled = 1 ORDER BY name ASC`)
 	if err != nil {
@@ -513,8 +512,8 @@ func scanComponent(row scanner) (*Component, error) {
 	var latestVersion, lastSeenVersion, lastCheckStatus, lastCheckError, notes, repoURL sql.NullString
 	var lastCheckedAt sql.NullTime
 	if err := row.Scan(
-		&item.ID, &item.Name, &item.RepoOwner, &item.RepoName, &repoURL, &item.CurrentVersion, &latestVersion,
-		&lastSeenVersion, &item.OwnerName, &item.OwnerEmail, &item.CheckStrategy, &enabled,
+		&item.ID, &item.Name, &repoURL, &item.CurrentVersion, &latestVersion,
+		&lastSeenVersion, &item.CheckStrategy, &enabled,
 		&lastCheckStatus, &lastCheckError, &lastCheckedAt, &notes, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -624,11 +623,5 @@ func parseTimePtr(value string) *time.Time {
 }
 
 func repoURL(c *Component) string {
-	if c.RepoURL != "" {
-		return c.RepoURL
-	}
-	if c.RepoOwner == "" || c.RepoName == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://github.com/%s/%s", c.RepoOwner, c.RepoName)
+	return c.RepoURL
 }

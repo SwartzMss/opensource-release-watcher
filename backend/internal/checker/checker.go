@@ -3,6 +3,8 @@ package checker
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -57,18 +59,34 @@ func (c *Checker) Check(ctx context.Context, component storage.Component) storag
 }
 
 func (c *Checker) fetchLatest(ctx context.Context, component storage.Component) (*github.ReleaseInfo, error) {
-	if component.CheckStrategy == "tag_only" {
-		return c.github.LatestTag(ctx, component.RepoOwner, component.RepoName)
+	owner, repo, ok := parseGitHubURL(component.RepoURL)
+	if !ok {
+		return nil, fmt.Errorf("invalid GitHub repository URL: %s", component.RepoURL)
 	}
-	release, err := c.github.LatestRelease(ctx, component.RepoOwner, component.RepoName)
+	if component.CheckStrategy == "tag_only" {
+		return c.github.LatestTag(ctx, owner, repo)
+	}
+	release, err := c.github.LatestRelease(ctx, owner, repo)
 	if err == nil {
 		return release, nil
 	}
-	tag, tagErr := c.github.LatestTag(ctx, component.RepoOwner, component.RepoName)
+	tag, tagErr := c.github.LatestTag(ctx, owner, repo)
 	if tagErr == nil {
 		return tag, nil
 	}
 	return nil, errors.Join(err, tagErr)
+}
+
+func parseGitHubURL(value string) (string, string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme == "" || !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return "", "", false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], strings.TrimSuffix(parts[1], ".git"), true
 }
 
 func summarize(note string) string {

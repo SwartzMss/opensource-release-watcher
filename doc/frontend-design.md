@@ -59,11 +59,9 @@ frontend/
 | 字段 | 说明 |
 | --- | --- |
 | name | 组件名称 |
-| repo_owner | GitHub 仓库 owner |
-| repo_name | GitHub 仓库名称 |
+| repo_url | GitHub 仓库地址 |
 | current_version | 当前内部使用版本 |
 | latest_version | 最近检查到的上游版本 |
-| owner_name | 组件负责人 |
 | enabled | 是否启用检查 |
 | last_check_status | 最近检查状态 |
 | last_checked_at | 最近检查时间 |
@@ -83,12 +81,8 @@ frontend/
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | name | string | 是 | 组件展示名称 |
-| repo_owner | string | 是 | GitHub owner，例如 `protocolbuffers` |
-| repo_name | string | 是 | GitHub repo，例如 `protobuf` |
-| repo_url | string | 否 | GitHub 仓库完整地址，可由 owner/name 自动生成 |
+| repo_url | string | 是 | GitHub 仓库完整地址 |
 | current_version | string | 是 | 当前内部使用版本 |
-| owner_name | string | 是 | 负责人名称或团队名称 |
-| owner_email | string | 是 | 负责人邮箱 |
 | check_strategy | string | 是 | `release_first` 或 `tag_only` |
 | enabled | boolean | 是 | 是否启用定时检查 |
 | notes | string | 否 | 备注 |
@@ -169,8 +163,6 @@ export interface Component {
   repoUrl: string;
   currentVersion: string;
   latestVersion?: string;
-  ownerName: string;
-  ownerEmail: string;
   checkStrategy: 'release_first' | 'tag_only';
   enabled: boolean;
   lastCheckStatus?: 'success' | 'failed' | 'skipped';
@@ -265,6 +257,5 @@ export interface NotificationRecord {
 - 手动检查组件时，按钮进入 loading 状态，接口返回后刷新组件状态和检查记录。
 - 删除组件前需要二次确认。
 - 禁用组件后，该组件不再进入定时检查任务。
-- 新增组件时需要校验 GitHub owner、repo、负责人邮箱和当前版本。
-- 邮箱字段需要做基本格式校验。
+- 新增组件时需要校验 GitHub 仓库地址和当前版本。
 - 列表默认按更新时间或检查时间倒序。

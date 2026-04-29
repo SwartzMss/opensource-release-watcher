@@ -18,13 +18,9 @@ export interface AuthUser {
 export interface ComponentItem {
   id: number;
   name: string;
-  repo_owner: string;
-  repo_name: string;
   repo_url: string;
   current_version: string;
   latest_version: string;
-  owner_name: string;
-  owner_email: string;
   check_strategy: 'release_first' | 'tag_only';
   enabled: boolean;
   last_check_status: 'success' | 'failed' | 'skipped' | '';
