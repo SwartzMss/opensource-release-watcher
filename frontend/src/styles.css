@@ -5,6 +5,14 @@ body {
   font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+a {
+  overflow-wrap: anywhere;
+}
+
 .shell {
   min-height: 100vh;
   background:
@@ -79,6 +87,7 @@ body {
 
 .content {
   padding: 34px;
+  min-width: 0;
 }
 
 .boot {
@@ -135,6 +144,7 @@ body {
 .page-header {
   align-items: center;
   display: flex;
+  gap: 16px;
   justify-content: space-between;
   margin-bottom: 24px;
 }
@@ -173,6 +183,10 @@ body {
   margin-bottom: 16px;
 }
 
+.toolbar-card .ant-space {
+  width: 100%;
+}
+
 .component-select {
   min-width: 360px;
 }
@@ -205,7 +219,59 @@ body {
   }
 
   .side {
+    align-items: center;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: 1fr auto;
     width: auto !important;
+    padding: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .brand {
+    margin-bottom: 0;
+    min-width: 0;
+  }
+
+  .brand strong,
+  .brand small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .session {
+    border: 0;
+    gap: 10px;
+    margin-bottom: 0;
+    padding: 0;
+  }
+
+  .session span {
+    display: none;
+  }
+
+  .nav {
+    display: flex;
+    gap: 8px;
+    grid-column: 1 / -1;
+    margin: 0 -16px -4px;
+    overflow-x: auto;
+    padding: 0 16px 4px;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav button {
+    border-radius: 8px;
+    flex: 0 0 auto;
+    padding: 9px 12px;
+    white-space: nowrap;
   }
 
   .content {
@@ -216,8 +282,159 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-header h1 {
+    font-size: 28px;
+    letter-spacing: 0;
+  }
+
+  .page-header p {
+    margin-top: 6px;
+  }
+
+  .page-header > .ant-btn {
+    align-self: stretch;
+  }
+
   .component-select,
   .filter-select {
     min-width: 100%;
+    width: 100%;
+  }
+
+  .toolbar-card .ant-space-item {
+    width: 100%;
+  }
+
+  .table-actions {
+    justify-content: stretch;
+  }
+
+  .table-actions .ant-btn {
+    width: 100%;
+  }
+
+  .ant-table-wrapper {
+    max-width: 100%;
+  }
+
+  .ant-table {
+    font-size: 13px;
+  }
+
+  .ant-space {
+    row-gap: 8px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .content {
+    padding: 16px 12px 24px;
+  }
+
+  .side {
+    padding: 12px;
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand-mark {
+    border-radius: 12px;
+    height: 38px;
+    width: 38px;
+  }
+
+  .brand strong {
+    font-size: 15px;
+  }
+
+  .brand small {
+    font-size: 12px;
+  }
+
+  .nav {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .login-shell {
+    align-items: stretch;
+    padding: 16px;
+  }
+
+  .login-panel {
+    align-self: center;
+    padding: 22px;
+  }
+
+  .login-brand h1 {
+    font-size: 21px;
+  }
+
+  .page-header {
+    margin-bottom: 18px;
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+  }
+
+  .metric-grid {
+    gap: 10px;
+  }
+
+  .metric .ant-card-body {
+    padding: 14px;
+  }
+
+  .metric strong {
+    font-size: 28px;
+    margin-top: 8px;
+  }
+
+  .toolbar-card .ant-card-body {
+    padding: 14px;
+  }
+
+  .ant-card-head {
+    padding: 0 14px !important;
+  }
+
+  .ant-card-body {
+    padding: 14px !important;
+  }
+
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+    top: 18px;
+  }
+
+  .ant-modal .ant-modal-body {
+    max-height: calc(100vh - 190px);
+    overflow: auto;
+  }
+
+  .ant-drawer-body {
+    padding: 14px !important;
+  }
+
+  .ant-descriptions-view {
+    overflow-x: auto;
+  }
+
+  .plain-pre {
+    max-height: 320px;
+  }
+
+  .compact-item {
+    width: 100%;
   }
 }
