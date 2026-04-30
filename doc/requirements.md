@@ -119,7 +119,7 @@
 | 幂等性 | 同一组件同一版本不重复通知 |
 | 可扩展性 | 后续可接入 GitHub Security Advisory、OSV、通知优先级和月度报告 |
 | 部署复杂度 | 单机部署优先，SQLite 存储，减少外部依赖 |
-| 配置方式 | SMTP、监听端口、GitHub Token 等走服务端配置；组件数据走数据库维护 |
+| 配置方式 | Microsoft Graph 发信参数、监听端口、GitHub Token 等走服务端配置；组件数据走数据库维护 |
 
 ## 7. 版本一期边界
 

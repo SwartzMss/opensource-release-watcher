@@ -92,6 +92,12 @@ export interface NotificationRecord {
   created_at: string;
 }
 
+export interface MailAuthStatus {
+  configured: boolean;
+  connected: boolean;
+  message?: string;
+}
+
 export interface SystemRun {
   id: number;
   trigger_type: 'scheduler' | 'manual';

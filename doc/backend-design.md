@@ -7,7 +7,7 @@
 - Go。
 - 标准库 `net/http` 或轻量路由框架。
 - SQLite。
-- SMTP 邮件发送。
+- Outlook / Microsoft Graph 邮件发送。
 - GitHub REST API。
 - 后台 scheduler 定时任务。
 
@@ -53,11 +53,10 @@ backend/
 | DB_PATH | 否 | SQLite 文件路径，默认 `data/watcher.db` |
 | GITHUB_TOKEN | 否 | GitHub API Token，用于提高限流额度 |
 | CHECK_INTERVAL | 否 | 定时检查间隔，例如 `6h` |
-| SMTP_HOST | 是 | SMTP 服务器地址 |
-| SMTP_PORT | 是 | SMTP 端口 |
-| SMTP_USERNAME | 是 | SMTP 用户名 |
-| SMTP_PASSWORD | 是 | SMTP 密码 |
-| SMTP_FROM | 是 | 邮件发件人 |
+| GRAPH_CLIENT_ID | 否 | Azure App Registration client ID |
+| GRAPH_CLIENT_SECRET | 否 | Azure App Registration client secret；公共客户端可不填 |
+| GRAPH_ACCESS_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph access token |
+| GRAPH_REFRESH_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph refresh token |
 
 ## 4. API 设计
 
@@ -108,6 +107,7 @@ backend/
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/notification-records` | 查询通知记录 |
+| POST | `/api/notification-records/test` | 发送测试邮件 |
 | GET | `/api/notification-records/{id}` | 查询通知详情 |
 
 ### 4.5 仪表盘 API

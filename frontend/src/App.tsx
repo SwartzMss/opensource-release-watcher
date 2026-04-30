@@ -561,12 +561,18 @@ function Notifications() {
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
   const [detail, setDetail] = useState<NotificationRecord | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testSending, setTestSending] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [testForm] = Form.useForm<{ recipient: string }>();
 
   async function load(nextFilters = filters) {
     setLoading(true);
     try {
-      const [records, componentPage] = await Promise.all([api.notifications(nextFilters), api.components()]);
+      const [records, componentPage] = await Promise.all([
+        api.notifications(nextFilters),
+        api.components(),
+      ]);
       setItems(records.items);
       setComponents(componentPage.items);
     } catch (error) {
@@ -588,9 +594,27 @@ function Notifications() {
     }
   }
 
+  async function sendTestMail(values: { recipient: string }) {
+    setTestSending(true);
+    try {
+      await api.testNotification(values.recipient);
+      message.success('测试邮件已发送');
+      setTestOpen(false);
+      testForm.resetFields();
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setTestSending(false);
+    }
+  }
+
   return (
     <section>
-      <PageHeader title="通知记录" description="查看邮件通知发送结果。" />
+      <PageHeader
+        title="通知记录"
+        description="查看邮件通知发送结果。"
+        action={<Button type="primary" onClick={() => setTestOpen(true)}>测试邮件</Button>}
+      />
       <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} />
       <Table
         rowKey="id"
@@ -621,6 +645,20 @@ function Notifications() {
           </Descriptions>
         )}
       </Drawer>
+      <Modal
+        title="发送测试邮件"
+        open={testOpen}
+        confirmLoading={testSending}
+        onCancel={() => setTestOpen(false)}
+        onOk={() => testForm.submit()}
+        destroyOnHidden
+      >
+        <Form form={testForm} layout="vertical" onFinish={sendTestMail}>
+          <Form.Item name="recipient" label="收件邮箱" rules={[{ required: true, type: 'email' }]}>
+            <Input placeholder="name@example.com" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </section>
   );
 }

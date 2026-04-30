@@ -269,6 +269,45 @@ GET /api/notification-records/{id}
 
 详情接口需要额外返回 `body` 字段，用于查看邮件正文快照。
 
+### 5.3 发送测试邮件
+
+```http
+POST /api/notification-records/test
+```
+
+请求体：
+
+```json
+{
+  "recipient": "name@example.com"
+}
+```
+
+响应：
+
+```json
+{
+  "sent": true
+}
+```
+
+测试邮件只用于验证 Outlook / Microsoft Graph 发信配置，不写入通知记录。
+
+### 5.4 查询邮件授权状态
+
+```http
+GET /api/mail/status
+```
+
+响应：
+
+```json
+{
+  "configured": true,
+  "connected": true
+}
+```
+
 ## 6. 枚举值
 
 ### 6.1 check_strategy

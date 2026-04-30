@@ -70,10 +70,12 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("PUT /api/subscribers/{id}", r.updateSubscriber)
 	r.mux.HandleFunc("DELETE /api/subscribers/{id}", r.deleteSubscriber)
 	r.mux.HandleFunc("POST /api/checks/run", r.runChecks)
+	r.mux.HandleFunc("GET /api/mail/status", r.mailAuthStatus)
 	r.mux.HandleFunc("GET /api/system-runs", r.listSystemRuns)
 	r.mux.HandleFunc("GET /api/check-records", r.listCheckRecords)
 	r.mux.HandleFunc("GET /api/check-records/{id}", r.getCheckRecord)
 	r.mux.HandleFunc("GET /api/notification-records", r.listNotificationRecords)
+	r.mux.HandleFunc("POST /api/notification-records/test", r.testNotification)
 	r.mux.HandleFunc("GET /api/notification-records/{id}", r.getNotificationRecord)
 	r.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, req *http.Request) {
 		writeOK(w, map[string]string{"status": "ok"})
@@ -124,6 +126,15 @@ func (r *Router) logout(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) me(w http.ResponseWriter, req *http.Request) {
 	writeOK(w, map[string]string{"username": r.auth.Username})
+}
+
+func (r *Router) mailAuthStatus(w http.ResponseWriter, req *http.Request) {
+	status, err := r.service.MailAuthStatus(req.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOK(w, status)
 }
 
 func (r *Router) listComponents(w http.ResponseWriter, req *http.Request) {
@@ -367,6 +378,28 @@ func (r *Router) listNotificationRecords(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	writePage(w, items, total, opts)
+}
+
+func (r *Router) testNotification(w http.ResponseWriter, req *http.Request) {
+	var payload struct {
+		Recipient string `json:"recipient"`
+	}
+	if !decode(w, req, &payload) {
+		return
+	}
+	recipient := strings.TrimSpace(payload.Recipient)
+	if recipient == "" {
+		writeError(w, http.StatusBadRequest, errors.New("recipient is required"))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(req.Context(), 45*time.Second)
+	defer cancel()
+	if err := r.service.SendTestNotification(ctx, recipient); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeOK(w, map[string]bool{"sent": true})
 }
 
 func (r *Router) getNotificationRecord(w http.ResponseWriter, req *http.Request) {

@@ -2,16 +2,15 @@ package config
 
 import (
 	"os"
-	"strconv"
 	"time"
 )
 
-type SMTPConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	From     string
+type GraphMailConfig struct {
+	TenantID     string
+	ClientID     string
+	ClientSecret string
+	AccessToken  string
+	RefreshToken string
 }
 
 type Config struct {
@@ -20,7 +19,7 @@ type Config struct {
 	GitHubToken   string
 	CheckInterval time.Duration
 	Auth          AuthConfig
-	SMTP          SMTPConfig
+	GraphMail     GraphMailConfig
 }
 
 type AuthConfig struct {
@@ -42,12 +41,12 @@ func Load() Config {
 			Password: adminPassword,
 			Secret:   env("SESSION_SECRET", adminUsername+":"+adminPassword),
 		},
-		SMTP: SMTPConfig{
-			Host:     os.Getenv("SMTP_HOST"),
-			Port:     intEnv("SMTP_PORT", 587),
-			Username: os.Getenv("SMTP_USERNAME"),
-			Password: os.Getenv("SMTP_PASSWORD"),
-			From:     os.Getenv("SMTP_FROM"),
+		GraphMail: GraphMailConfig{
+			TenantID:     os.Getenv("GRAPH_TENANT_ID"),
+			ClientID:     os.Getenv("GRAPH_CLIENT_ID"),
+			ClientSecret: os.Getenv("GRAPH_CLIENT_SECRET"),
+			AccessToken:  os.Getenv("GRAPH_ACCESS_TOKEN"),
+			RefreshToken: os.Getenv("GRAPH_REFRESH_TOKEN"),
 		},
 	}
 }
@@ -57,18 +56,6 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func intEnv(key string, fallback int) int {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }
 
 func durationEnv(key string, fallback time.Duration) time.Duration {
