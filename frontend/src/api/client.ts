@@ -5,6 +5,7 @@ import type {
   ComponentItem,
   DashboardSummary,
   LatestVersionInfo,
+  MailAuthStatus,
   NotificationRecord,
   PageData,
   Subscriber,
@@ -72,7 +73,13 @@ export const api = {
   checkRecord: (id: number) => request<CheckRecord>(`/api/check-records/${id}`),
   notifications: (params?: Record<string, string | number | boolean | undefined>) =>
     request<PageData<NotificationRecord>>(`/api/notification-records?${query({ page: 1, page_size: 50, ...params })}`),
+  testNotification: (recipient: string) =>
+    request<{ sent: boolean }>('/api/notification-records/test', {
+      method: 'POST',
+      body: JSON.stringify({ recipient }),
+    }),
   notification: (id: number) => request<NotificationRecord>(`/api/notification-records/${id}`),
+  mailStatus: () => request<MailAuthStatus>('/api/mail/status'),
 };
 
 function query(params: Record<string, string | number | boolean | undefined>) {

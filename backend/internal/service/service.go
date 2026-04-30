@@ -17,10 +17,12 @@ type Service struct {
 	store    *storage.Store
 	checker  *checker.Checker
 	notifier notifier.Notifier
+	mailAuth notifier.StatusProvider
 }
 
-func New(store *storage.Store, checker *checker.Checker, notifier notifier.Notifier) *Service {
-	return &Service{store: store, checker: checker, notifier: notifier}
+func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifier) *Service {
+	mailAuth, _ := mailer.(notifier.StatusProvider)
+	return &Service{store: store, checker: checker, notifier: mailer, mailAuth: mailAuth}
 }
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
@@ -140,6 +142,31 @@ func (s *Service) ListNotificationRecords(ctx context.Context, opts storage.List
 
 func (s *Service) GetNotificationRecord(ctx context.Context, id int64) (*storage.NotificationRecord, error) {
 	return s.store.GetNotificationRecord(ctx, id)
+}
+
+func (s *Service) MailAuthStatus(ctx context.Context) (notifier.AuthStatus, error) {
+	if s.mailAuth == nil {
+		return notifier.AuthStatus{Message: "mail authentication is not available"}, nil
+	}
+	return s.mailAuth.Status(ctx)
+}
+
+func (s *Service) SendTestNotification(ctx context.Context, recipient string) error {
+	recipient = strings.TrimSpace(recipient)
+	if recipient == "" {
+		return fmt.Errorf("recipient is required")
+	}
+	now := time.Now().Format(time.RFC3339)
+	return s.notifier.Send(notifier.Message{
+		To:      []string{recipient},
+		Subject: "[开源组件更新] 测试邮件",
+		Body: fmt.Sprintf(`这是一封来自 opensource-release-watcher 的测试邮件。
+
+如果你收到这封邮件，说明 Outlook / Microsoft Graph 发信配置可以正常工作。
+
+发送时间：%s
+`, now),
+	})
 }
 
 func (s *Service) ListSystemRuns(ctx context.Context, opts storage.ListOptions) ([]storage.SystemRun, int, error) {

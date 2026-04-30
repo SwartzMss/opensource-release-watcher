@@ -124,7 +124,7 @@ patch
 - 最近一次检查结果
 - 最近一次通知记录
 
-服务端只需要少量基础配置，例如 SMTP 发信参数和监听端口；组件监控数据本身不通过外部配置文件维护。
+服务端只需要少量基础配置，例如 Microsoft Graph 发信参数和监听端口；组件监控数据本身不通过外部配置文件维护。
 
 ## 通知示例
 
@@ -161,7 +161,7 @@ Release Note 摘要：
 ```text
 Frontend (React + TypeScript + Vite + Ant Design)
         +
-Go HTTP API Server + Scheduler + SQLite + SMTP
+Go HTTP API Server + Scheduler + SQLite + Microsoft Graph
 ```
 
 ## 模块设计
@@ -269,7 +269,7 @@ cp .env.example .env
 | `ADMIN_USERNAME` | 登录用户名，默认 `admin` |
 | `ADMIN_PASSWORD` | 登录密码，默认 `admin` |
 | `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境应设置为随机长字符串 |
-| `SMTP_*` | 邮件发送配置；留空时不实际发送邮件 |
+| `GRAPH_*` | 个人 Outlook / Microsoft Graph 发信配置 |
 | `DOMAIN` | nginx 对外域名 |
 | `EXTERNAL_PORT` | nginx HTTPS 对外端口 |
 | `CERT_PATH` | TLS 证书路径 |
@@ -277,6 +277,24 @@ cp .env.example .env
 | `CLIENT_MAX_BODY_SIZE` | nginx 请求体大小限制 |
 
 `.env` 包含真实域名、证书路径和密钥，不应提交；仓库只提交脱敏后的 `.env.example`。
+
+个人 Outlook / Hotmail 邮箱配置：
+
+```env
+GRAPH_CLIENT_ID=你的应用客户端 ID
+GRAPH_CLIENT_SECRET=可选，按应用注册类型填写
+GRAPH_ACCESS_TOKEN=脚本生成的 access_token
+GRAPH_REFRESH_TOKEN=脚本生成的 refresh_token
+```
+
+在 Microsoft 应用注册中启用个人 Microsoft 账户登录，添加 delegated 权限 `Mail.Send`、`User.Read`、`offline_access`，并添加重定向 URI `https://login.microsoftonline.com/common/oauth2/nativeclient`。然后运行：
+
+```bash
+python3 -m pip install selenium requests
+python3 tools/outlook_tokens.py
+```
+
+先编辑 `tools/outlook_tokens.py` 顶部的 `CLIENT_ID`，需要密钥时再填写 `CLIENT_SECRET`。脚本会打开浏览器让你登录 Outlook，并输出可写入 `.env` 的 token。`GRAPH_TENANT_ID` 和 `GRAPH_REDIRECT_URL` 不需要配置，后端默认使用 `common`，脚本固定使用 `https://login.microsoftonline.com/common/oauth2/nativeclient`。重启服务后，测试邮件和更新通知会使用这些 token 发信。
 
 默认登录账号是 `admin/admin`。生产部署前建议至少修改：
 

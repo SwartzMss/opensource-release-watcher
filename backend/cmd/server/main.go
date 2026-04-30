@@ -25,9 +25,9 @@ func main() {
 	defer store.Close()
 
 	githubClient := github.NewClient(cfg.GitHubToken)
-	mailer := notifier.NewSMTP(cfg.SMTP)
+	mailNotifier := notifier.NewGraphDelegatedMail(cfg.GraphMail)
 	releaseChecker := checker.New(githubClient)
-	watcherService := service.New(store, releaseChecker, mailer)
+	watcherService := service.New(store, releaseChecker, mailNotifier)
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
 	router := api.NewRouter(watcherService, cfg.Auth)

@@ -27,6 +27,7 @@ import type {
   CheckRecord,
   ComponentItem,
   DashboardSummary,
+  MailAuthStatus,
   NotificationRecord,
   Subscriber,
   SystemRun,
@@ -559,16 +560,25 @@ function Checks() {
 function Notifications() {
   const [items, setItems] = useState<NotificationRecord[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
+  const [mailStatus, setMailStatus] = useState<MailAuthStatus | null>(null);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
   const [detail, setDetail] = useState<NotificationRecord | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testSending, setTestSending] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [testForm] = Form.useForm<{ recipient: string }>();
 
   async function load(nextFilters = filters) {
     setLoading(true);
     try {
-      const [records, componentPage] = await Promise.all([api.notifications(nextFilters), api.components()]);
+      const [records, componentPage, status] = await Promise.all([
+        api.notifications(nextFilters),
+        api.components(),
+        api.mailStatus(),
+      ]);
       setItems(records.items);
       setComponents(componentPage.items);
+      setMailStatus(status);
     } catch (error) {
       message.error(String(error));
     } finally {
@@ -588,9 +598,36 @@ function Notifications() {
     }
   }
 
+  async function sendTestMail(values: { recipient: string }) {
+    setTestSending(true);
+    try {
+      await api.testNotification(values.recipient);
+      message.success('测试邮件已发送');
+      setTestOpen(false);
+      testForm.resetFields();
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setTestSending(false);
+    }
+  }
+
   return (
     <section>
-      <PageHeader title="通知记录" description="查看邮件通知发送结果。" />
+      <PageHeader
+        title="通知记录"
+        description="查看邮件通知发送结果。"
+        action={<Button type="primary" onClick={() => setTestOpen(true)}>测试邮件</Button>}
+      />
+      {mailStatus && (
+        <Alert
+          className="mail-status"
+          type={mailStatus.connected ? 'success' : 'warning'}
+          showIcon
+          message={mailStatus.connected ? '邮件 Token 已配置' : '邮件 Token 未配置'}
+          description={mailStatus.message || '测试邮件和更新通知会使用 .env 中的 Outlook token 发送。'}
+        />
+      )}
       <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} />
       <Table
         rowKey="id"
@@ -621,6 +658,20 @@ function Notifications() {
           </Descriptions>
         )}
       </Drawer>
+      <Modal
+        title="发送测试邮件"
+        open={testOpen}
+        confirmLoading={testSending}
+        onCancel={() => setTestOpen(false)}
+        onOk={() => testForm.submit()}
+        destroyOnHidden
+      >
+        <Form form={testForm} layout="vertical" onFinish={sendTestMail}>
+          <Form.Item name="recipient" label="收件邮箱" rules={[{ required: true, type: 'email' }]}>
+            <Input placeholder="name@example.com" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </section>
   );
 }
