@@ -27,7 +27,6 @@ import type {
   CheckRecord,
   ComponentItem,
   DashboardSummary,
-  MailAuthStatus,
   NotificationRecord,
   Subscriber,
   SystemRun,
@@ -560,7 +559,6 @@ function Checks() {
 function Notifications() {
   const [items, setItems] = useState<NotificationRecord[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
-  const [mailStatus, setMailStatus] = useState<MailAuthStatus | null>(null);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
   const [detail, setDetail] = useState<NotificationRecord | null>(null);
   const [testOpen, setTestOpen] = useState(false);
@@ -571,14 +569,12 @@ function Notifications() {
   async function load(nextFilters = filters) {
     setLoading(true);
     try {
-      const [records, componentPage, status] = await Promise.all([
+      const [records, componentPage] = await Promise.all([
         api.notifications(nextFilters),
         api.components(),
-        api.mailStatus(),
       ]);
       setItems(records.items);
       setComponents(componentPage.items);
-      setMailStatus(status);
     } catch (error) {
       message.error(String(error));
     } finally {
@@ -619,15 +615,6 @@ function Notifications() {
         description="查看邮件通知发送结果。"
         action={<Button type="primary" onClick={() => setTestOpen(true)}>测试邮件</Button>}
       />
-      {mailStatus && (
-        <Alert
-          className="mail-status"
-          type={mailStatus.connected ? 'success' : 'warning'}
-          showIcon
-          message={mailStatus.connected ? '邮件 Token 已配置' : '邮件 Token 未配置'}
-          description={mailStatus.message || '测试邮件和更新通知会使用 .env 中的 Outlook token 发送。'}
-        />
-      )}
       <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} />
       <Table
         rowKey="id"
