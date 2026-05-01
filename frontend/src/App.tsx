@@ -393,7 +393,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         className="dashboard-panel"
         title={(
           <div className="dashboard-panel-title">
-            <span>最近发现更新</span>
+            <span>组件版本动态</span>
           </div>
         )}
         loading={dashboardLoading}
