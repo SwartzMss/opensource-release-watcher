@@ -5,6 +5,7 @@ import {
   Card,
   Descriptions,
   Drawer,
+  Grid,
   Form,
   Input,
   Layout,
@@ -40,6 +41,15 @@ type PageKey = 'dashboard' | 'components' | 'subscribers' | 'checks' | 'notifica
 export function App() {
   const [user, setUser] = useState<AuthUser | null>();
   const [page, setPage] = useState<PageKey>('dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileNavOpen(false);
+    }
+  }, [isMobile]);
 
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
@@ -63,6 +73,73 @@ export function App() {
     return <Login onLogin={setUser} />;
   }
 
+  const navItems: Array<[PageKey, string]> = [
+    ['dashboard', '仪表盘'],
+    ['components', '组件管理'],
+    ['subscribers', '订阅人管理'],
+    ['checks', '检查记录'],
+    ['notifications', '通知记录'],
+  ];
+
+  const pageContent = (
+    <>
+      {page === 'dashboard' && <Dashboard isMobile={isMobile} />}
+      {page === 'components' && <Components isMobile={isMobile} />}
+      {page === 'subscribers' && <Subscribers isMobile={isMobile} />}
+      {page === 'checks' && <Checks isMobile={isMobile} />}
+      {page === 'notifications' && <Notifications isMobile={isMobile} />}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="shell mobile-shell">
+        <header className="mobile-topbar">
+          <div className="brand mobile-brand">
+            <span className="brand-mark">OR</span>
+            <div>
+              <strong>Release Watcher</strong>
+              <small>开源组件版本感知</small>
+            </div>
+          </div>
+          <div className="mobile-topbar-actions">
+            <Button className="mobile-menu-button" onClick={() => setMobileNavOpen(true)}>☰</Button>
+            <Button size="small" onClick={() => void logout()}>退出</Button>
+          </div>
+        </header>
+        <Drawer
+          className="mobile-nav-drawer"
+          open={mobileNavOpen}
+          placement="left"
+          width={280}
+          onClose={() => setMobileNavOpen(false)}
+        >
+          <div className="mobile-drawer-session">
+            <strong>{user.username}</strong>
+            <Button size="small" onClick={() => void logout()}>退出登录</Button>
+          </div>
+          <nav className="nav mobile-nav">
+            {navItems.map(([key, label]) => (
+              <button
+                key={key}
+                className={page === key ? 'active' : ''}
+                onClick={() => {
+                  setPage(key);
+                  setMobileNavOpen(false);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </Drawer>
+        <main className="content mobile-content">
+          {pageContent}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <Layout className="shell">
       <Layout.Sider width={260} className="side">
@@ -78,13 +155,7 @@ export function App() {
           <Button size="small" onClick={() => void logout()}>退出</Button>
         </div>
         <nav className="nav">
-          {[
-            ['dashboard', '仪表盘'],
-            ['components', '组件管理'],
-            ['subscribers', '订阅人管理'],
-            ['checks', '检查记录'],
-            ['notifications', '通知记录'],
-          ].map(([key, label]) => (
+          {navItems.map(([key, label]) => (
             <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
               {label}
             </button>
@@ -92,11 +163,7 @@ export function App() {
         </nav>
       </Layout.Sider>
       <Layout.Content className="content">
-        {page === 'dashboard' && <Dashboard />}
-        {page === 'components' && <Components />}
-        {page === 'subscribers' && <Subscribers />}
-        {page === 'checks' && <Checks />}
-        {page === 'notifications' && <Notifications />}
+        {pageContent}
       </Layout.Content>
     </Layout>
   );
@@ -145,7 +212,7 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
   const [loading, setLoading] = useState(false);
@@ -200,28 +267,32 @@ function Dashboard() {
         ))}
       </div>
       <Card title="最近全量检查">
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
-          dataSource={runs}
-          scroll={{ x: 780 }}
-          columns={[
-            { title: '触发方式', dataIndex: 'trigger_type' },
-            { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
-            { title: '总数', dataIndex: 'total_count' },
-            { title: '成功', dataIndex: 'success_count' },
-            { title: '失败', dataIndex: 'failed_count' },
-            { title: '开始时间', dataIndex: 'started_at', render: formatTime },
-            { title: '结束时间', dataIndex: 'finished_at', render: formatTime },
-          ]}
-        />
+        {isMobile ? (
+          <MobileRunList runs={runs} />
+        ) : (
+          <Table
+            rowKey="id"
+            size="middle"
+            pagination={false}
+            dataSource={runs}
+            scroll={{ x: 780 }}
+            columns={[
+              { title: '触发方式', dataIndex: 'trigger_type' },
+              { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+              { title: '总数', dataIndex: 'total_count' },
+              { title: '成功', dataIndex: 'success_count' },
+              { title: '失败', dataIndex: 'failed_count' },
+              { title: '开始时间', dataIndex: 'started_at', render: formatTime },
+              { title: '结束时间', dataIndex: 'finished_at', render: formatTime },
+            ]}
+          />
+        )}
       </Card>
     </section>
   );
 }
 
-function Components() {
+function Components({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<ComponentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<ComponentItem | null>(null);
@@ -325,13 +396,31 @@ function Components() {
   return (
     <section>
       <PageHeader title="组件管理" description="维护开源组件清单和当前内部使用版本。" action={<Button type="primary" onClick={() => openEditor()}>新增组件</Button>} />
-      <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} />
-      <ComponentModal form={form} open={editing !== null} title={editing?.id ? '编辑组件' : '新增组件'} onCancel={() => setEditing(null)} onFinish={saveComponent} />
+      {isMobile ? (
+        <MobileComponentList
+          loading={loading}
+          items={items}
+          onCheck={check}
+          onEdit={openEditor}
+          onRemove={remove}
+          onToggle={toggleEnabled}
+        />
+      ) : (
+        <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} size="middle" />
+      )}
+      <ComponentModal
+        form={form}
+        open={editing !== null}
+        title={editing?.id ? '编辑组件' : '新增组件'}
+        isMobile={isMobile}
+        onCancel={() => setEditing(null)}
+        onFinish={saveComponent}
+      />
     </section>
   );
 }
 
-function Subscribers() {
+function Subscribers({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<GlobalSubscriber[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [editor, setEditor] = useState<{ subscriber: GlobalSubscriber | null; activeTab: 'basic' | 'modules' | 'notifications' } | null>(null);
@@ -450,65 +539,78 @@ function Subscribers() {
       <div className="table-actions">
         <Button type="primary" onClick={() => openEditor()}>新增订阅人</Button>
       </div>
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        pagination={false}
-        scroll={{ x: 960 }}
-        columns={[
-          { title: '名称', dataIndex: 'name' },
-          { title: '邮箱', dataIndex: 'email' },
-          {
-            title: '订阅模块',
-            render: (_, row) => (
-              row.all_components ? (
-                <Tag color="green">全部组件</Tag>
-              ) : (
-                <Tooltip
-                  title={
-                    (row.component_ids ?? []).length
-                      ? (row.component_ids ?? []).map(id => components.find(item => item.id === id)?.name ?? `#${id}`).join('、')
-                      : '未选择任何组件'
-                  }
-                >
-                  <Space size={[4, 4]} wrap>
-                    {(row.component_ids ?? []).slice(0, 3).map(id => {
-                      const component = components.find(item => item.id === id);
-                      return <Tag key={id}>{component?.name ?? `#${id}`}</Tag>;
-                    })}
-                    {(row.component_ids?.length ?? 0) > 3 && <Tag>+{(row.component_ids?.length ?? 0) - 3}</Tag>}
-                    {(row.component_ids?.length ?? 0) === 0 && <Tag color="orange">未选择</Tag>}
-                  </Space>
-                </Tooltip>
-              )
-            ),
-          },
-          { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggle(row, checked)} /> },
-          { title: '创建时间', dataIndex: 'created_at', render: formatTime },
-          {
-            title: '操作',
-            render: (_, row) => (
-              <Space className="subscriber-actions">
-                <Tooltip title="编辑">
-                  <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
-                </Tooltip>
-                <Popconfirm title="删除这个订阅人？" onConfirm={() => void remove(row.id)}>
-                  <Tooltip title="删除">
-                    <Button aria-label="删除" className="icon-action" size="small" shape="circle" danger>×</Button>
+      {isMobile ? (
+        <MobileSubscriberList
+          loading={loading}
+          items={items}
+          components={components}
+          onEdit={openEditor}
+          onRemove={remove}
+          onToggle={toggle}
+        />
+      ) : (
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={items}
+          pagination={false}
+          scroll={{ x: 960 }}
+          size="middle"
+          columns={[
+            { title: '名称', dataIndex: 'name' },
+            { title: '邮箱', dataIndex: 'email' },
+            {
+              title: '订阅模块',
+              render: (_, row) => (
+                row.all_components ? (
+                  <Tag color="green">全部组件</Tag>
+                ) : (
+                  <Tooltip
+                    title={
+                      (row.component_ids ?? []).length
+                        ? (row.component_ids ?? []).map(id => components.find(item => item.id === id)?.name ?? `#${id}`).join('、')
+                        : '未选择任何组件'
+                    }
+                  >
+                    <Space size={[4, 4]} wrap>
+                      {(row.component_ids ?? []).slice(0, 3).map(id => {
+                        const component = components.find(item => item.id === id);
+                        return <Tag key={id}>{component?.name ?? `#${id}`}</Tag>;
+                      })}
+                      {(row.component_ids?.length ?? 0) > 3 && <Tag>+{(row.component_ids?.length ?? 0) - 3}</Tag>}
+                      {(row.component_ids?.length ?? 0) === 0 && <Tag color="orange">未选择</Tag>}
+                    </Space>
                   </Tooltip>
-                </Popconfirm>
-              </Space>
-            ),
-          },
-        ]}
-      />
+                )
+              ),
+            },
+            { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggle(row, checked)} /> },
+            { title: '创建时间', dataIndex: 'created_at', render: formatTime },
+            {
+              title: '操作',
+              render: (_, row) => (
+                <Space className="subscriber-actions">
+                  <Tooltip title="编辑">
+                    <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
+                  </Tooltip>
+                  <Popconfirm title="删除这个订阅人？" onConfirm={() => void remove(row.id)}>
+                    <Tooltip title="删除">
+                      <Button aria-label="删除" className="icon-action" size="small" shape="circle" danger>×</Button>
+                    </Tooltip>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      )}
       <SubscriberDetailDrawer
         open={editor !== null}
         subscriber={editor ? editor.subscriber : null}
         components={components}
         loading={saving}
         activeTab={editor?.activeTab ?? 'basic'}
+        isMobile={isMobile}
         onClose={() => setEditor(null)}
         onChangeTab={tab => {
           setLastActiveTab(tab);
@@ -534,6 +636,7 @@ function SubscriberDetailDrawer(props: {
   components: ComponentItem[];
   loading: boolean;
   activeTab: 'basic' | 'modules' | 'notifications';
+  isMobile: boolean;
   notifications: NotificationRecord[];
   notificationsLoading: boolean;
   onClose: () => void;
@@ -572,7 +675,7 @@ function SubscriberDetailDrawer(props: {
 
   return (
     <Drawer
-      width="min(780px, 100vw)"
+      width={props.isMobile ? '100vw' : 'min(780px, 100vw)'}
       title={props.subscriber ? `${props.subscriber.name} 的订阅详情` : '新增订阅人'}
       open={props.open}
       onClose={props.onClose}
@@ -632,7 +735,7 @@ function SubscriberDetailDrawer(props: {
                         onChange={keys => moduleForm.setFieldValue('component_ids', keys.map(key => Number(key)))}
                         render={item => item.title}
                         showSearch
-                        listStyle={{ width: 340, height: 360 }}
+                        listStyle={props.isMobile ? { width: '100%', height: 280 } : { width: 340, height: 360 }}
                         locale={{ itemUnit: '项', itemsUnit: '项', searchPlaceholder: '搜索组件' }}
                       />
                     </Form.Item>
@@ -662,6 +765,7 @@ function SubscriberDetailDrawer(props: {
                 loading={props.notificationsLoading}
                 dataSource={props.notifications}
                 pagination={false}
+                size={props.isMobile ? 'small' : 'middle'}
                 columns={[
                   { title: '组件', dataIndex: 'component_name' },
                   { title: '版本', dataIndex: 'version' },
@@ -678,7 +782,7 @@ function SubscriberDetailDrawer(props: {
   );
 }
 
-function Checks() {
+function Checks({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<CheckRecord[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
@@ -714,23 +818,28 @@ function Checks() {
     <section>
       <PageHeader title="检查记录" description="查看每次 GitHub Release/Tag 检查结果。" />
       <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} includeUpdate />
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={[
-          { title: '组件', dataIndex: 'component_name' },
-          { title: '来源', dataIndex: 'source' },
-          { title: '版本变化', render: (_, row) => `${row.previous_version || '-'} -> ${row.latest_version || '-'}` },
-          { title: '是否更新', dataIndex: 'has_update', render: value => value ? <Tag color="orange">有更新</Tag> : <Tag>无</Tag> },
-          { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
-          { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
-          { title: '检查时间', dataIndex: 'checked_at', render: formatTime },
-          { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>详情</Button> },
-        ]}
-        scroll={{ x: 1000 }}
-      />
-      <Drawer title="检查详情" width="min(720px, 100vw)" open={detail !== null} onClose={() => setDetail(null)}>
+      {isMobile ? (
+        <MobileCheckList items={items} loading={loading} onOpenDetail={showDetail} />
+      ) : (
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={items}
+          size="middle"
+          columns={[
+            { title: '组件', dataIndex: 'component_name' },
+            { title: '来源', dataIndex: 'source' },
+            { title: '版本变化', render: (_, row) => `${row.previous_version || '-'} -> ${row.latest_version || '-'}` },
+            { title: '是否更新', dataIndex: 'has_update', render: value => value ? <Tag color="orange">有更新</Tag> : <Tag>无</Tag> },
+            { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+            { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
+            { title: '检查时间', dataIndex: 'checked_at', render: formatTime },
+            { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>详情</Button> },
+          ]}
+          scroll={{ x: 1000 }}
+        />
+      )}
+      <Drawer title="检查详情" width={isMobile ? '100vw' : 'min(720px, 100vw)'} open={detail !== null} onClose={() => setDetail(null)}>
         {detail && (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
@@ -749,7 +858,7 @@ function Checks() {
   );
 }
 
-function Notifications() {
+function Notifications({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<NotificationRecord[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
@@ -809,23 +918,28 @@ function Notifications() {
         action={<Button type="primary" onClick={() => setTestOpen(true)}>测试邮件</Button>}
       />
       <FilterBar components={components} filters={filters} onChange={next => { setFilters(next); void load(next); }} />
-      <Table
-        rowKey="id"
-        loading={loading}
-        dataSource={items}
-        columns={[
-          { title: '组件', dataIndex: 'component_name' },
-          { title: '版本', dataIndex: 'version' },
-          { title: '收件人', dataIndex: 'recipient_email' },
-          { title: '标题', dataIndex: 'subject' },
-          { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
-          { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
-          { title: '发送时间', dataIndex: 'sent_at', render: formatTime },
-          { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>正文</Button> },
-        ]}
-        scroll={{ x: 1100 }}
-      />
-      <Drawer title="邮件正文" width="min(720px, 100vw)" open={detail !== null} onClose={() => setDetail(null)}>
+      {isMobile ? (
+        <MobileNotificationList items={items} loading={loading} onOpenDetail={showDetail} />
+      ) : (
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={items}
+          size="middle"
+          columns={[
+            { title: '组件', dataIndex: 'component_name' },
+            { title: '版本', dataIndex: 'version' },
+            { title: '收件人', dataIndex: 'recipient_email' },
+            { title: '标题', dataIndex: 'subject' },
+            { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+            { title: '失败原因', dataIndex: 'error_message', render: value => value || '-' },
+            { title: '发送时间', dataIndex: 'sent_at', render: formatTime },
+            { title: '操作', render: (_, row) => <Button size="small" onClick={() => void showDetail(row.id)}>正文</Button> },
+          ]}
+          scroll={{ x: 1100 }}
+        />
+      )}
+      <Drawer title="邮件正文" width={isMobile ? '100vw' : 'min(720px, 100vw)'} open={detail !== null} onClose={() => setDetail(null)}>
         {detail && (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label="组件">{detail.component_name}</Descriptions.Item>
@@ -841,6 +955,7 @@ function Notifications() {
       <Modal
         title="发送测试邮件"
         open={testOpen}
+        width={isMobile ? 'calc(100vw - 24px)' : 520}
         confirmLoading={testSending}
         onCancel={() => setTestOpen(false)}
         onOk={() => testForm.submit()}
@@ -860,6 +975,7 @@ function ComponentModal(props: {
   form: FormInstance<Partial<ComponentItem>>;
   open: boolean;
   title: string;
+  isMobile: boolean;
   onCancel: () => void;
   onFinish: (values: Partial<ComponentItem>) => void | Promise<void>;
 }) {
@@ -928,7 +1044,14 @@ function ComponentModal(props: {
   }
 
   return (
-    <Modal title={props.title} open={props.open} onCancel={props.onCancel} onOk={() => props.form.submit()} destroyOnHidden>
+    <Modal
+      title={props.title}
+      open={props.open}
+      width={props.isMobile ? 'calc(100vw - 24px)' : 720}
+      onCancel={props.onCancel}
+      onOk={() => props.form.submit()}
+      destroyOnHidden
+    >
       <Form form={props.form} layout="vertical" onFinish={props.onFinish} onValuesChange={handleValuesChange} initialValues={{ check_strategy: 'release_first', enabled: true }}>
         <Form.Item name="name" label="组件名称" rules={[{ required: true }]}>
           <Input placeholder="protobuf" />
@@ -979,49 +1102,79 @@ function FilterBar(props: {
   includeUpdate?: boolean;
   onChange: (filters: Record<string, string | number | boolean | undefined>) => void;
 }) {
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+  const [expanded, setExpanded] = useState(!isMobile);
+
+  useEffect(() => {
+    setExpanded(!isMobile);
+  }, [isMobile]);
+
   function patch(key: string, value: string | number | boolean | undefined) {
     props.onChange({ ...props.filters, [key]: value });
   }
 
+  function clearFilters() {
+    props.onChange({});
+  }
+
+  const activeCount = Object.values(props.filters).filter(value => value !== undefined && value !== '').length;
+
   return (
     <Card className="toolbar-card">
-      <Space wrap>
-        <Select
-          allowClear
-          showSearch
-          className="filter-select"
-          placeholder="组件"
-          value={props.filters.component_id}
-          optionFilterProp="label"
-          onChange={value => patch('component_id', value)}
-          options={props.components.map(item => ({ label: item.name, value: item.id }))}
-        />
-        <Select
-          allowClear
-          className="filter-select"
-          placeholder="状态"
-          value={props.filters.status}
-          onChange={value => patch('status', value)}
-          options={[
-            { label: 'success', value: 'success' },
-            { label: 'failed', value: 'failed' },
-            { label: 'sent', value: 'sent' },
-          ]}
-        />
-        {props.includeUpdate && (
+      <div className="filter-bar-head">
+        <div>
+          <strong>筛选条件</strong>
+          <span>{activeCount ? `已选择 ${activeCount} 项` : '按条件缩小范围'}</span>
+        </div>
+        <Space size={8}>
+          {activeCount > 0 && <Button size="small" onClick={clearFilters}>清空</Button>}
+          {isMobile && (
+            <Button size="small" type="primary" onClick={() => setExpanded(value => !value)}>
+              {expanded ? '收起' : '展开'}
+            </Button>
+          )}
+        </Space>
+      </div>
+      {(!isMobile || expanded) && (
+        <Space className="filter-space" wrap>
+          <Select
+            allowClear
+            showSearch
+            className="filter-select"
+            placeholder="组件"
+            value={props.filters.component_id}
+            optionFilterProp="label"
+            onChange={value => patch('component_id', value)}
+            options={props.components.map(item => ({ label: item.name, value: item.id }))}
+          />
           <Select
             allowClear
             className="filter-select"
-            placeholder="是否更新"
-            value={props.filters.has_update}
-            onChange={value => patch('has_update', value)}
+            placeholder="状态"
+            value={props.filters.status}
+            onChange={value => patch('status', value)}
             options={[
-              { label: '有更新', value: true },
-              { label: '无更新', value: false },
+              { label: 'success', value: 'success' },
+              { label: 'failed', value: 'failed' },
+              { label: 'sent', value: 'sent' },
             ]}
           />
-        )}
-      </Space>
+          {props.includeUpdate && (
+            <Select
+              allowClear
+              className="filter-select"
+              placeholder="是否更新"
+              value={props.filters.has_update}
+              onChange={value => patch('has_update', value)}
+              options={[
+                { label: '有更新', value: true },
+                { label: '无更新', value: false },
+              ]}
+            />
+          )}
+        </Space>
+      )}
     </Card>
   );
 }
@@ -1035,6 +1188,200 @@ function PageHeader(props: { title: string; description: string; action?: ReactN
       </div>
       {props.action}
     </header>
+  );
+}
+
+function MobileRunList(props: { runs: SystemRun[] }) {
+  return (
+    <div className="mobile-list">
+      {props.runs.length === 0 ? (
+        <Card className="mobile-empty">暂无检查记录</Card>
+      ) : props.runs.map(run => (
+        <Card key={run.id} className="mobile-item-card">
+          <div className="mobile-item-head">
+            <div>
+              <strong>{run.trigger_type === 'manual' ? '手动触发' : '定时任务'}</strong>
+              <div className="mobile-item-meta">{formatTime(run.started_at)} - {formatTime(run.finished_at)}</div>
+            </div>
+            <StatusTag status={run.status} />
+          </div>
+          <div className="mobile-item-grid">
+            <div><span>总数</span><strong>{run.total_count}</strong></div>
+            <div><span>成功</span><strong>{run.success_count}</strong></div>
+            <div><span>失败</span><strong>{run.failed_count}</strong></div>
+          </div>
+          {run.error_message && <div className="mobile-item-note">{run.error_message}</div>}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function MobileComponentList(props: {
+  items: ComponentItem[];
+  loading: boolean;
+  onCheck: (id: number) => void | Promise<void>;
+  onEdit: (item: ComponentItem) => void;
+  onRemove: (id: number) => void | Promise<void>;
+  onToggle: (row: ComponentItem, enabled: boolean) => void | Promise<void>;
+}) {
+  return (
+    <div className="mobile-list">
+      {props.loading ? (
+        <Card className="mobile-empty">加载中...</Card>
+      ) : props.items.length === 0 ? (
+        <Card className="mobile-empty">暂无组件</Card>
+      ) : props.items.map(item => (
+        <Card key={item.id} className="mobile-item-card">
+          <div className="mobile-item-head">
+            <div>
+              <strong>{item.name}</strong>
+              <div className="mobile-item-meta"><a href={item.repo_url} target="_blank">{item.repo_url}</a></div>
+            </div>
+            <ComponentStatusLight status={item.last_check_status} />
+          </div>
+          <div className="mobile-item-grid">
+            <div><span>当前版本</span><strong>{item.current_version || '-'}</strong></div>
+            <div><span>最新版本</span><strong>{item.latest_version || '-'}</strong></div>
+            <div><span>检查时间</span><strong>{formatTime(item.last_checked_at)}</strong></div>
+          </div>
+          {item.last_check_error && <div className="mobile-item-note">{item.last_check_error}</div>}
+          <div className="mobile-item-footer">
+            <Space wrap>
+              <Switch checked={item.enabled} onChange={checked => void props.onToggle(item, checked)} />
+              <Button size="small" onClick={() => void props.onCheck(item.id)}>检查</Button>
+              <Button size="small" onClick={() => props.onEdit(item)}>编辑</Button>
+              <Popconfirm title="删除这个组件？" onConfirm={() => void props.onRemove(item.id)}>
+                <Button size="small" danger>删除</Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function MobileSubscriberList(props: {
+  items: GlobalSubscriber[];
+  components: ComponentItem[];
+  loading: boolean;
+  onEdit: (item: GlobalSubscriber) => void;
+  onRemove: (id: number) => void | Promise<void>;
+  onToggle: (row: GlobalSubscriber, enabled: boolean) => void | Promise<void>;
+}) {
+  return (
+    <div className="mobile-list">
+      {props.loading ? (
+        <Card className="mobile-empty">加载中...</Card>
+      ) : props.items.length === 0 ? (
+        <Card className="mobile-empty">暂无订阅人</Card>
+      ) : props.items.map(item => (
+        <Card key={item.id} className="mobile-item-card">
+          <div className="mobile-item-head">
+            <div>
+              <strong>{item.name}</strong>
+              <div className="mobile-item-meta">{item.email}</div>
+            </div>
+            <Tag color={item.all_components ? 'green' : undefined}>{item.all_components ? '全部组件' : '部分组件'}</Tag>
+          </div>
+          <div className="mobile-tags">
+            {item.all_components ? (
+              <Tag color="green">全部组件</Tag>
+            ) : (item.component_ids ?? []).length ? (
+              (item.component_ids ?? []).slice(0, 4).map(id => {
+                const component = props.components.find(entry => entry.id === id);
+                return <Tag key={id}>{component?.name ?? `#${id}`}</Tag>;
+              })
+            ) : (
+              <Tag color="orange">未选择组件</Tag>
+            )}
+            {!item.all_components && (item.component_ids?.length ?? 0) > 4 && <Tag>+{(item.component_ids?.length ?? 0) - 4}</Tag>}
+          </div>
+          <div className="mobile-item-grid">
+            <div><span>创建时间</span><strong>{formatTime(item.created_at)}</strong></div>
+            <div><span>状态</span><strong>{item.enabled ? '启用' : '停用'}</strong></div>
+          </div>
+          <div className="mobile-item-footer">
+            <Space wrap>
+              <Switch checked={item.enabled} onChange={checked => void props.onToggle(item, checked)} />
+              <Button size="small" onClick={() => props.onEdit(item)}>编辑</Button>
+              <Popconfirm title="删除这个订阅人？" onConfirm={() => void props.onRemove(item.id)}>
+                <Button size="small" danger>删除</Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function MobileCheckList(props: {
+  items: CheckRecord[];
+  loading: boolean;
+  onOpenDetail: (id: number) => void | Promise<void>;
+}) {
+  return (
+    <div className="mobile-list">
+      {props.loading ? (
+        <Card className="mobile-empty">加载中...</Card>
+      ) : props.items.length === 0 ? (
+        <Card className="mobile-empty">暂无检查记录</Card>
+      ) : props.items.map(item => (
+        <Card key={item.id} className="mobile-item-card">
+          <div className="mobile-item-head">
+            <div>
+              <strong>{item.component_name}</strong>
+              <div className="mobile-item-meta">{item.source || '-'} · {formatTime(item.checked_at)}</div>
+            </div>
+            <StatusTag status={item.status} />
+          </div>
+          <div className="mobile-item-grid">
+            <div><span>版本变化</span><strong>{item.previous_version || '-'} → {item.latest_version || '-'}</strong></div>
+            <div><span>是否更新</span><strong>{item.has_update ? '有更新' : '无更新'}</strong></div>
+          </div>
+          {item.error_message && <div className="mobile-item-note">{item.error_message}</div>}
+          <div className="mobile-item-footer">
+            <Button size="small" onClick={() => void props.onOpenDetail(item.id)}>查看详情</Button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function MobileNotificationList(props: {
+  items: NotificationRecord[];
+  loading: boolean;
+  onOpenDetail: (id: number) => void | Promise<void>;
+}) {
+  return (
+    <div className="mobile-list">
+      {props.loading ? (
+        <Card className="mobile-empty">加载中...</Card>
+      ) : props.items.length === 0 ? (
+        <Card className="mobile-empty">暂无通知记录</Card>
+      ) : props.items.map(item => (
+        <Card key={item.id} className="mobile-item-card">
+          <div className="mobile-item-head">
+            <div>
+              <strong>{item.component_name}</strong>
+              <div className="mobile-item-meta">{item.recipient_email}</div>
+            </div>
+            <StatusTag status={item.status} />
+          </div>
+          <div className="mobile-item-grid">
+            <div><span>版本</span><strong>{item.version || '-'}</strong></div>
+            <div><span>标题</span><strong>{item.subject || '-'}</strong></div>
+          </div>
+          {item.error_message && <div className="mobile-item-note">{item.error_message}</div>}
+          <div className="mobile-item-footer">
+            <Button size="small" onClick={() => void props.onOpenDetail(item.id)}>查看正文</Button>
+          </div>
+        </Card>
+      ))}
+    </div>
   );
 }
 
