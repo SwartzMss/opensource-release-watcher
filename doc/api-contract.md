@@ -230,23 +230,7 @@ PUT /api/global-subscribers/{id}/components
 
 ## 4. 检查记录接口
 
-### 4.1 手动触发全量检查
-
-```http
-POST /api/checks/run
-```
-
-响应示例：
-
-```json
-{
-  "run_id": 10,
-  "status": "running",
-  "started_at": "2026-04-28T10:00:00Z"
-}
-```
-
-### 4.2 查询全量检查运行记录
+### 4.1 查询全量检查运行记录
 
 ```http
 GET /api/system-runs?page=1&page_size=20
@@ -266,7 +250,7 @@ GET /api/system-runs?page=1&page_size=20
 | finished_at | string | 结束时间 |
 | error_message | string | 全局失败原因 |
 
-### 4.3 查询检查记录
+### 4.2 查询检查记录
 
 ```http
 GET /api/check-records?page=1&page_size=20&component_id=1&status=success&has_update=true

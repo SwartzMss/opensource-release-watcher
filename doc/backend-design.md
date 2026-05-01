@@ -102,7 +102,6 @@ backend/
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/checks/run` | 手动触发全量检查 |
 | GET | `/api/system-runs` | 查询全量检查运行记录 |
 | GET | `/api/check-records` | 查询检查记录 |
 | GET | `/api/check-records/{id}` | 查询检查详情 |

@@ -234,19 +234,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     void load();
   }, []);
 
-  async function runChecks() {
-    setLoading(true);
-    try {
-      await api.runChecks();
-      message.success('全量检查已完成');
-      await load();
-    } catch (error) {
-      message.error(String(error));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const cards = [
     ['组件总数', summary?.component_total ?? 0],
     ['启用检查', summary?.enabled_component_total ?? 0],
@@ -257,7 +244,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
 
   return (
     <section>
-      <PageHeader title="仪表盘" description="查看开源组件监控整体状态。" action={<Button type="primary" loading={loading} onClick={runChecks}>手动全量检查</Button>} />
+      <PageHeader title="仪表盘" description="查看开源组件监控整体状态。" />
       <div className="metric-grid">
         {cards.map(([label, value]) => (
           <Card key={label} className="metric">
