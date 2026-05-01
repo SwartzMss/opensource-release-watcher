@@ -310,13 +310,18 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       ? { label: '已通知', tone: 'success' as const }
       : relatedNotifications.some(notification => notification.status === 'failed')
         ? { label: '通知失败', tone: 'danger' as const }
-        : { label: '待通知', tone: 'warning' as const };
+        : { label: '未通知', tone: 'warning' as const };
+    const riskMeta = dashboardRiskMeta(item);
     return {
       id: item.id,
-      title: item.component_name,
-      versionRange: `${item.previous_version || '-'} → ${item.latest_version || '-'}`,
-      checkedAt: formatClock(item.checked_at),
-      meta: notificationMeta,
+      componentName: item.component_name,
+      currentVersion: item.previous_version || '-',
+      latestVersion: item.latest_version || '-',
+      notificationStatus: notificationMeta.label,
+      notificationTone: notificationMeta.tone,
+      checkedAt: formatTime(item.checked_at),
+      riskLabel: riskMeta.label,
+      riskTone: riskMeta.tone,
     };
   });
 
@@ -423,24 +428,59 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           </div>
         )}
         loading={dashboardLoading}
-      >
+        >
         {recentUpdateRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无发现更新"
           />
         ) : (
-          <div className="dashboard-compact-list">
-            {recentUpdateRows.map(item => (
-              <div key={item.id} className="dashboard-compact-item">
-                <div className="dashboard-compact-item-head">
-                  <strong>{item.title}</strong>
-                  <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
-                </div>
-                <div className="dashboard-compact-item-version">{item.versionRange}</div>
-                <div className="dashboard-compact-item-footer">检查于 {item.checkedAt}</div>
-              </div>
-            ))}
-          </div>
+          <Table
+            className="dashboard-updates-table"
+            columns={[
+              { title: '组件', dataIndex: 'componentName', key: 'componentName', width: 180, ellipsis: true },
+              {
+                title: '当前版本',
+                dataIndex: 'currentVersion',
+                key: 'currentVersion',
+                width: 120,
+                render: value => <span className="dashboard-table-strong">{value || '-'}</span>,
+              },
+              {
+                title: '最新版本',
+                dataIndex: 'latestVersion',
+                key: 'latestVersion',
+                width: 120,
+                render: value => <span className="dashboard-table-strong">{value || '-'}</span>,
+              },
+              {
+                title: '是否通知',
+                dataIndex: 'notificationStatus',
+                key: 'notificationStatus',
+                width: 120,
+                render: (value, row) => <Tag color={dashboardCompactTagColor(row.notificationTone)}>{value}</Tag>,
+              },
+              {
+                title: '最新检查时间',
+                dataIndex: 'checkedAt',
+                key: 'checkedAt',
+                width: 170,
+                render: value => value || '-',
+              },
+              {
+                title: '漏洞风险',
+                dataIndex: 'riskLabel',
+                key: 'riskLabel',
+                width: 110,
+                render: (value, row) => <Tag color={dashboardRiskTagColor(row.riskTone)}>{value}</Tag>,
+              },
+            ]}
+            dataSource={recentUpdateRows}
+            loading={dashboardLoading}
+            pagination={false}
+            rowKey="id"
+            size="middle"
+            scroll={{ x: 820 }}
+          />
         )}
       </Card>
     </section>
@@ -1620,6 +1660,19 @@ function dashboardCompactTagColor(tone: 'success' | 'warning' | 'danger') {
   if (tone === 'success') return 'green';
   if (tone === 'warning') return 'orange';
   return 'red';
+}
+
+function dashboardRiskMeta(record: CheckRecord) {
+  const text = `${record.release_title} ${record.release_note_summary} ${record.release_note ?? ''}`.toLowerCase();
+  if (/(security|secure|cve|vuln|vulnerability|漏洞|安全修复|security fix|security issue)/.test(text)) {
+    return { label: '有风险', tone: 'danger' as const };
+  }
+  return { label: '未识别', tone: 'neutral' as const };
+}
+
+function dashboardRiskTagColor(tone: 'danger' | 'neutral') {
+  if (tone === 'danger') return 'red';
+  return 'default';
 }
 
 function emptyComponent(): ComponentItem {
