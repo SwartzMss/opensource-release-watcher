@@ -7,7 +7,8 @@
 核心原则：
 
 - 组件是主实体。
-- 订阅人从属于组件。
+- 订阅人是主实体。
+- 每个订阅人可以选择全部组件或指定组件集合。
 - 每次检查都生成检查记录。
 - 每次邮件发送都生成通知记录。
 - 通过唯一约束避免同一组件同一版本重复通知。
@@ -62,7 +63,26 @@ UNIQUE(component_id, email)
 FOREIGN KEY(component_id) REFERENCES components(id)
 ```
 
-### 2.3 check_records
+### 2.3 global_subscribers
+
+保存订阅人主表。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | INTEGER | 是 | 主键 |
+| name | TEXT | 是 | 订阅人名称 |
+| email | TEXT | 是 | 订阅人邮箱 |
+| enabled | INTEGER | 是 | 是否启用 |
+| created_at | DATETIME | 是 | 创建时间 |
+| updated_at | DATETIME | 是 | 更新时间 |
+
+建议约束：
+
+```sql
+UNIQUE(email)
+```
+
+### 2.4 check_records
 
 保存每次版本检查结果。
 
@@ -90,7 +110,7 @@ CREATE INDEX idx_check_records_component_id ON check_records(component_id);
 CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
 ```
 
-### 2.4 notification_records
+### 2.5 notification_records
 
 保存邮件通知记录。
 
@@ -116,7 +136,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 FOREIGN KEY(check_record_id) REFERENCES check_records(id)
 ```
 
-### 2.5 system_runs
+### 2.6 system_runs
 
 保存全量检查任务运行记录。
 
@@ -163,6 +183,15 @@ CREATE TABLE subscribers (
   updated_at DATETIME NOT NULL,
   UNIQUE(component_id, email),
   FOREIGN KEY(component_id) REFERENCES components(id)
+);
+
+CREATE TABLE global_subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
 );
 
 CREATE TABLE check_records (

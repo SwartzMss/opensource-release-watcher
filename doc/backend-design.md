@@ -88,6 +88,11 @@ backend/
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/api/global-subscribers` | 查询订阅人 |
+| POST | `/api/global-subscribers` | 新增订阅人 |
+| PUT | `/api/global-subscribers/{id}` | 更新订阅人 |
+| PUT | `/api/global-subscribers/{id}/components` | 更新订阅模块 |
+| DELETE | `/api/global-subscribers/{id}` | 删除订阅人 |
 | GET | `/api/components/{id}/subscribers` | 查询组件订阅人 |
 | POST | `/api/components/{id}/subscribers` | 新增订阅人 |
 | PUT | `/api/subscribers/{id}` | 更新订阅人 |
@@ -182,6 +187,8 @@ backend/
 
 收件人规则：
 
+- 订阅人可选择接收全部组件通知。
+- 组件订阅人只接收对应组件通知。
 - 启用状态的订阅人邮箱需要接收。
 - 相同邮箱去重。
 

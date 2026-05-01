@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   Button,
@@ -17,6 +17,8 @@ import {
   Table,
   Tag,
   Tooltip,
+  Transfer,
+  Tabs,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -27,6 +29,7 @@ import type {
   CheckRecord,
   ComponentItem,
   DashboardSummary,
+  GlobalSubscriber,
   NotificationRecord,
   Subscriber,
   SystemRun,
@@ -222,7 +225,6 @@ function Components() {
   const [items, setItems] = useState<ComponentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<ComponentItem | null>(null);
-  const [subscribersFor, setSubscribersFor] = useState<ComponentItem | null>(null);
   const [form] = Form.useForm<Partial<ComponentItem>>();
 
   async function load() {
@@ -310,9 +312,6 @@ function Components() {
           <Tooltip title="编辑">
             <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
           </Tooltip>
-          <Tooltip title="订阅人">
-            <Button aria-label="订阅人" className="icon-action" size="small" shape="circle" onClick={() => setSubscribersFor(row)}>@</Button>
-          </Tooltip>
           <Popconfirm title="删除这个组件？" onConfirm={() => void remove(row.id)}>
             <Tooltip title="删除">
               <Button aria-label="删除" className="icon-action" size="small" shape="circle" danger>×</Button>
@@ -328,60 +327,30 @@ function Components() {
       <PageHeader title="组件管理" description="维护开源组件清单和当前内部使用版本。" action={<Button type="primary" onClick={() => openEditor()}>新增组件</Button>} />
       <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} />
       <ComponentModal form={form} open={editing !== null} title={editing?.id ? '编辑组件' : '新增组件'} onCancel={() => setEditing(null)} onFinish={saveComponent} />
-      {subscribersFor && <SubscriberDrawer component={subscribersFor} onClose={() => setSubscribersFor(null)} />}
     </section>
   );
 }
 
 function Subscribers() {
+  const [items, setItems] = useState<GlobalSubscriber[]>([]);
   const [components, setComponents] = useState<ComponentItem[]>([]);
-  const [componentId, setComponentId] = useState<number>();
-  const selected = useMemo(() => components.find(item => item.id === componentId), [components, componentId]);
+  const [editor, setEditor] = useState<{ subscriber: GlobalSubscriber | null; activeTab: 'basic' | 'modules' | 'notifications' } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [recentNotifications, setRecentNotifications] = useState<NotificationRecord[]>([]);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [lastActiveTab, setLastActiveTab] = useState<'basic' | 'modules' | 'notifications'>('basic');
 
   useEffect(() => {
-    api.components().then(data => {
-      setComponents(data.items);
-      setComponentId(data.items[0]?.id);
-    }).catch(error => message.error(String(error)));
+    void load();
   }, []);
-
-  return (
-    <section>
-      <PageHeader title="订阅人管理" description="维护组件版本更新的邮件订阅人。" />
-      <Card className="toolbar-card">
-        <Select
-          showSearch
-          className="component-select"
-          placeholder="选择组件"
-          value={componentId}
-          optionFilterProp="label"
-          onChange={setComponentId}
-          options={components.map(item => ({ label: `${item.name} (${item.repo_url})`, value: item.id }))}
-        />
-      </Card>
-      {selected && <SubscriberManager component={selected} />}
-    </section>
-  );
-}
-
-function SubscriberDrawer(props: { component: ComponentItem; onClose: () => void }) {
-  return (
-    <Drawer width="min(760px, 100vw)" title={`${props.component.name} 订阅人`} open onClose={props.onClose}>
-      <SubscriberManager component={props.component} />
-    </Drawer>
-  );
-}
-
-function SubscriberManager({ component }: { component: ComponentItem }) {
-  const [items, setItems] = useState<Subscriber[]>([]);
-  const [editing, setEditing] = useState<Subscriber | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
 
   async function load() {
     setLoading(true);
     try {
-      setItems(await api.subscribers(component.id));
+      const [nextItems, nextComponents] = await Promise.all([api.globalSubscribers(), api.components()]);
+      setItems(nextItems);
+      setComponents(nextComponents.items);
     } catch (error) {
       message.error(String(error));
     } finally {
@@ -389,51 +358,92 @@ function SubscriberManager({ component }: { component: ComponentItem }) {
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, [component.id]);
-
-  function openEditor(item?: Subscriber) {
-    const value = item ?? { name: '', email: '', enabled: true };
-    setEditing(value as Subscriber);
-    form.setFieldsValue(value);
+  function openEditor(item?: GlobalSubscriber, activeTab?: 'basic' | 'modules' | 'notifications') {
+    if (!item) {
+      setRecentNotifications([]);
+    }
+    setEditor({ subscriber: item ?? null, activeTab: activeTab ?? (item ? lastActiveTab : 'basic') });
   }
 
-  async function save(values: Partial<Subscriber>) {
+  async function save(values: Partial<GlobalSubscriber>) {
+    setSaving(true);
     try {
-      if (editing?.id) {
-        await api.updateSubscriber(editing.id, values);
+      if (editor?.subscriber?.id) {
+        const next = await api.updateGlobalSubscriber(editor.subscriber.id, values);
         message.success('订阅人已更新');
+        setEditor(prev => prev ? { ...prev, subscriber: next } : prev);
       } else {
-        await api.createSubscriber(component.id, values);
+        const created = await api.createGlobalSubscriber(values);
         message.success('订阅人已创建');
+        setEditor({ subscriber: created, activeTab: 'modules' });
       }
-      setEditing(null);
-      form.resetFields();
       await load();
     } catch (error) {
       message.error(String(error));
+    } finally {
+      setSaving(false);
     }
   }
 
   async function remove(id: number) {
     try {
-      await api.deleteSubscriber(id);
+      await api.deleteGlobalSubscriber(id);
       message.success('订阅人已删除');
+      if (editor?.subscriber?.id === id) {
+        setEditor(null);
+      }
       await load();
     } catch (error) {
       message.error(String(error));
     }
   }
 
-  async function toggle(row: Subscriber, enabled: boolean) {
+  async function toggle(row: GlobalSubscriber, enabled: boolean) {
     try {
-      await api.updateSubscriber(row.id, { ...row, enabled });
+      await api.updateGlobalSubscriber(row.id, { enabled, name: row.name, email: row.email });
       await load();
     } catch (error) {
       message.error(String(error));
     }
   }
+
+  async function saveModules(payload: { component_ids: number[] }) {
+    if (!editor?.subscriber) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const next = await api.updateGlobalSubscriberComponents(editor.subscriber.id, {
+        all_components: false,
+        component_ids: payload.component_ids,
+      });
+      setEditor(prev => prev ? { ...prev, subscriber: next } : prev);
+      message.success('订阅模块已更新');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadNotifications(email: string) {
+    setNotificationLoading(true);
+    try {
+      const page = await api.notifications({ recipient_email: email, page_size: 10 });
+      setRecentNotifications(page.items);
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setNotificationLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (editor?.subscriber && editor.activeTab === 'notifications') {
+      void loadNotifications(editor.subscriber.email);
+    }
+  }, [editor?.subscriber?.email, editor?.activeTab]);
 
   return (
     <>
@@ -445,10 +455,35 @@ function SubscriberManager({ component }: { component: ComponentItem }) {
         loading={loading}
         dataSource={items}
         pagination={false}
-        scroll={{ x: 720 }}
+        scroll={{ x: 960 }}
         columns={[
           { title: '名称', dataIndex: 'name' },
           { title: '邮箱', dataIndex: 'email' },
+          {
+            title: '订阅模块',
+            render: (_, row) => (
+              row.all_components ? (
+                <Tag color="green">全部组件</Tag>
+              ) : (
+                <Tooltip
+                  title={
+                    (row.component_ids ?? []).length
+                      ? (row.component_ids ?? []).map(id => components.find(item => item.id === id)?.name ?? `#${id}`).join('、')
+                      : '未选择任何组件'
+                  }
+                >
+                  <Space size={[4, 4]} wrap>
+                    {(row.component_ids ?? []).slice(0, 3).map(id => {
+                      const component = components.find(item => item.id === id);
+                      return <Tag key={id}>{component?.name ?? `#${id}`}</Tag>;
+                    })}
+                    {(row.component_ids?.length ?? 0) > 3 && <Tag>+{(row.component_ids?.length ?? 0) - 3}</Tag>}
+                    {(row.component_ids?.length ?? 0) === 0 && <Tag color="orange">未选择</Tag>}
+                  </Space>
+                </Tooltip>
+              )
+            ),
+          },
           { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggle(row, checked)} /> },
           { title: '创建时间', dataIndex: 'created_at', render: formatTime },
           {
@@ -468,20 +503,178 @@ function SubscriberManager({ component }: { component: ComponentItem }) {
           },
         ]}
       />
-      <Modal title={editing?.id ? '编辑订阅人' : '新增订阅人'} open={editing !== null} onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>
-        <Form form={form} layout="vertical" onFinish={save} initialValues={{ enabled: true }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <SubscriberDetailDrawer
+        open={editor !== null}
+        subscriber={editor ? editor.subscriber : null}
+        components={components}
+        loading={saving}
+        activeTab={editor?.activeTab ?? 'basic'}
+        onClose={() => setEditor(null)}
+        onChangeTab={tab => {
+          setLastActiveTab(tab);
+          setEditor(prev => prev ? { ...prev, activeTab: tab } : prev);
+        }}
+        onSaveBasic={save}
+        onSave={saveModules}
+        notifications={recentNotifications}
+        notificationsLoading={notificationLoading}
+        onRefreshNotifications={() => {
+          if (editor?.subscriber) {
+            void loadNotifications(editor.subscriber.email);
+          }
+        }}
+      />
     </>
+  );
+}
+
+function SubscriberDetailDrawer(props: {
+  open: boolean;
+  subscriber: GlobalSubscriber | null;
+  components: ComponentItem[];
+  loading: boolean;
+  activeTab: 'basic' | 'modules' | 'notifications';
+  notifications: NotificationRecord[];
+  notificationsLoading: boolean;
+  onClose: () => void;
+  onChangeTab: (tab: 'basic' | 'modules' | 'notifications') => void;
+  onSaveBasic: (values: Partial<GlobalSubscriber>) => void | Promise<void>;
+  onSave: (payload: { component_ids: number[] }) => void | Promise<void>;
+  onRefreshNotifications: () => void | Promise<void>;
+}) {
+  const [basicForm] = Form.useForm<Partial<GlobalSubscriber>>();
+  const [moduleForm] = Form.useForm<{ component_ids: number[] }>();
+
+  useEffect(() => {
+    if (!props.subscriber) {
+      basicForm.resetFields();
+      moduleForm.resetFields();
+      basicForm.setFieldsValue({ enabled: true });
+      moduleForm.setFieldsValue({ component_ids: [] });
+      return;
+    }
+    const selectedComponentIds = props.subscriber.all_components
+      ? props.components.map(item => item.id)
+      : props.subscriber.component_ids ?? [];
+    basicForm.setFieldsValue({
+      name: props.subscriber.name,
+      email: props.subscriber.email,
+      enabled: props.subscriber.enabled,
+    });
+    moduleForm.setFieldsValue({
+      component_ids: selectedComponentIds,
+    });
+  }, [basicForm, moduleForm, props.components, props.subscriber]);
+
+  function getSelectedIds() {
+    return (moduleForm.getFieldValue('component_ids') ?? []) as number[];
+  }
+
+  return (
+    <Drawer
+      width="min(780px, 100vw)"
+      title={props.subscriber ? `${props.subscriber.name} 的订阅详情` : '新增订阅人'}
+      open={props.open}
+      onClose={props.onClose}
+      destroyOnHidden
+      extra={props.activeTab === 'basic'
+        ? <Button type="primary" loading={props.loading} onClick={() => basicForm.submit()}>保存</Button>
+        : props.activeTab === 'modules'
+          ? <Button type="primary" loading={props.loading} onClick={() => moduleForm.submit()}>保存</Button>
+          : <Button onClick={() => void props.onRefreshNotifications()}>刷新记录</Button>}
+    >
+      <Tabs
+        activeKey={props.activeTab}
+        onChange={key => props.onChangeTab(key as 'basic' | 'modules' | 'notifications')}
+        items={[
+          {
+            key: 'basic',
+            label: '基础信息',
+            children: (
+              <Form
+                form={basicForm}
+                layout="vertical"
+                onFinish={props.onSaveBasic}
+                initialValues={{ enabled: true }}
+              >
+                <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email' }]}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="enabled" label="启用" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+              </Form>
+            ),
+          },
+          {
+            key: 'modules',
+            label: '订阅模块',
+            children: (
+              <Form
+                form={moduleForm}
+                layout="vertical"
+                onFinish={values => props.onSave({ component_ids: values.component_ids ?? [] })}
+                initialValues={{ component_ids: [] }}
+              >
+                <Form.Item shouldUpdate noStyle>
+                  {({ getFieldValue }) => (
+                    <Form.Item label="选择订阅组件">
+                      <Transfer
+                        dataSource={props.components.map(item => ({
+                          key: String(item.id),
+                          title: item.name,
+                        }))}
+                        titles={['全部组件', '已选组件']}
+                        targetKeys={(getFieldValue('component_ids') ?? []).map((id: number) => String(id))}
+                        onChange={keys => moduleForm.setFieldValue('component_ids', keys.map(key => Number(key)))}
+                        render={item => item.title}
+                        showSearch
+                        listStyle={{ width: 340, height: 360 }}
+                        locale={{ itemUnit: '项', itemsUnit: '项', searchPlaceholder: '搜索组件' }}
+                      />
+                    </Form.Item>
+                  )}
+                </Form.Item>
+                <Form.Item
+                  hidden
+                  name="component_ids"
+                  rules={[{
+                    validator: async (_, value) => {
+                      if (Array.isArray(value) && value.length > 0) {
+                        return;
+                      }
+                      throw new Error('请选择至少一个组件');
+                    },
+                  }]}
+                />
+              </Form>
+            ),
+          },
+          {
+            key: 'notifications',
+            label: '最近通知',
+            children: (
+              <Table
+                rowKey="id"
+                loading={props.notificationsLoading}
+                dataSource={props.notifications}
+                pagination={false}
+                columns={[
+                  { title: '组件', dataIndex: 'component_name' },
+                  { title: '版本', dataIndex: 'version' },
+                  { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
+                  { title: '发送时间', dataIndex: 'sent_at', render: formatTime },
+                  { title: '创建时间', dataIndex: 'created_at', render: formatTime },
+                ]}
+              />
+            ),
+          },
+        ]}
+      />
+    </Drawer>
   );
 }
 

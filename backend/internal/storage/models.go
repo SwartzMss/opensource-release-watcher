@@ -29,6 +29,17 @@ type Subscriber struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type GlobalSubscriber struct {
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	Enabled       bool      `json:"enabled"`
+	AllComponents bool      `json:"all_components"`
+	ComponentIDs  []int64   `json:"component_ids,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 type CheckRecord struct {
 	ID                 int64      `json:"id"`
 	ComponentID        int64      `json:"component_id"`
@@ -84,13 +95,14 @@ type DashboardSummary struct {
 }
 
 type ListOptions struct {
-	Page        int
-	PageSize    int
-	Keyword     string
-	Enabled     *bool
-	Status      string
-	ComponentID int64
-	HasUpdate   *bool
+	Page           int
+	PageSize       int
+	Keyword        string
+	Enabled        *bool
+	Status         string
+	ComponentID    int64
+	RecipientEmail string
+	HasUpdate      *bool
 }
 
 func (o ListOptions) LimitOffset() (int, int) {

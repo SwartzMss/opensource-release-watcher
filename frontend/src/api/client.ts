@@ -4,6 +4,7 @@ import type {
   CheckRecord,
   ComponentItem,
   DashboardSummary,
+  GlobalSubscriber,
   LatestVersionInfo,
   MailAuthStatus,
   NotificationRecord,
@@ -68,6 +69,25 @@ export const api = {
     }),
   deleteSubscriber: (id: number) =>
     request<{ deleted: boolean }>(`/api/subscribers/${id}`, { method: 'DELETE' }),
+  globalSubscribers: () => request<GlobalSubscriber[]>('/api/global-subscribers'),
+  globalSubscriber: (id: number) => request<GlobalSubscriber>(`/api/global-subscribers/${id}`),
+  createGlobalSubscriber: (subscriber: Partial<GlobalSubscriber>) =>
+    request<GlobalSubscriber>('/api/global-subscribers', {
+      method: 'POST',
+      body: JSON.stringify(subscriber),
+    }),
+  updateGlobalSubscriber: (id: number, subscriber: Partial<GlobalSubscriber>) =>
+    request<GlobalSubscriber>(`/api/global-subscribers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(subscriber),
+    }),
+  updateGlobalSubscriberComponents: (id: number, payload: { all_components: boolean; component_ids: number[] }) =>
+    request<GlobalSubscriber>(`/api/global-subscribers/${id}/components`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  deleteGlobalSubscriber: (id: number) =>
+    request<{ deleted: boolean }>(`/api/global-subscribers/${id}`, { method: 'DELETE' }),
   checkRecords: (params?: Record<string, string | number | boolean | undefined>) =>
     request<PageData<CheckRecord>>(`/api/check-records?${query({ page: 1, page_size: 50, ...params })}`),
   checkRecord: (id: number) => request<CheckRecord>(`/api/check-records/${id}`),

@@ -69,6 +69,12 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("POST /api/components/{id}/subscribers", r.createSubscriber)
 	r.mux.HandleFunc("PUT /api/subscribers/{id}", r.updateSubscriber)
 	r.mux.HandleFunc("DELETE /api/subscribers/{id}", r.deleteSubscriber)
+	r.mux.HandleFunc("GET /api/global-subscribers", r.listGlobalSubscribers)
+	r.mux.HandleFunc("POST /api/global-subscribers", r.createGlobalSubscriber)
+	r.mux.HandleFunc("GET /api/global-subscribers/{id}", r.getGlobalSubscriber)
+	r.mux.HandleFunc("PUT /api/global-subscribers/{id}", r.updateGlobalSubscriber)
+	r.mux.HandleFunc("PUT /api/global-subscribers/{id}/components", r.updateGlobalSubscriberComponents)
+	r.mux.HandleFunc("DELETE /api/global-subscribers/{id}", r.deleteGlobalSubscriber)
 	r.mux.HandleFunc("POST /api/checks/run", r.runChecks)
 	r.mux.HandleFunc("GET /api/mail/status", r.mailAuthStatus)
 	r.mux.HandleFunc("GET /api/system-runs", r.listSystemRuns)
@@ -276,12 +282,16 @@ func (r *Router) createSubscriber(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		return
 	}
-	var item storage.Subscriber
-	if !decode(w, req, &item) {
+	var payload subscriberPayload
+	if !decode(w, req, &payload) {
 		return
 	}
+	item := payload.Subscriber
 	item.ComponentID = componentID
 	item.Enabled = true
+	if payload.Enabled != nil {
+		item.Enabled = *payload.Enabled
+	}
 	if err := validateSubscriber(item); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -320,6 +330,124 @@ func (r *Router) deleteSubscriber(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if err := r.service.DeleteSubscriber(req.Context(), id); err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeOK(w, map[string]bool{"deleted": true})
+}
+
+func (r *Router) listGlobalSubscribers(w http.ResponseWriter, req *http.Request) {
+	items, err := r.service.ListGlobalSubscribers(req.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOK(w, items)
+}
+
+func (r *Router) createGlobalSubscriber(w http.ResponseWriter, req *http.Request) {
+	var payload globalSubscriberPayload
+	if !decode(w, req, &payload) {
+		return
+	}
+	item := payload.GlobalSubscriber
+	item.Enabled = true
+	if payload.Enabled != nil {
+		item.Enabled = *payload.Enabled
+	}
+	item.AllComponents = false
+	if err := validateSubscriberNameEmail(item.Name, item.Email); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := r.service.CreateGlobalSubscriber(req.Context(), &item); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeStatus(w, http.StatusCreated, item)
+}
+
+func (r *Router) getGlobalSubscriber(w http.ResponseWriter, req *http.Request) {
+	id, ok := pathID(w, req)
+	if !ok {
+		return
+	}
+	item, err := r.service.GetGlobalSubscriber(req.Context(), id)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeOK(w, item)
+}
+
+func (r *Router) updateGlobalSubscriber(w http.ResponseWriter, req *http.Request) {
+	id, ok := pathID(w, req)
+	if !ok {
+		return
+	}
+	var payload struct {
+		Name    *string `json:"name"`
+		Email   *string `json:"email"`
+		Enabled *bool   `json:"enabled"`
+	}
+	if !decode(w, req, &payload) {
+		return
+	}
+	item, err := r.service.GetGlobalSubscriber(req.Context(), id)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	if payload.Name != nil {
+		item.Name = *payload.Name
+	}
+	if payload.Email != nil {
+		item.Email = *payload.Email
+	}
+	if payload.Enabled != nil {
+		item.Enabled = *payload.Enabled
+	}
+	if err := validateSubscriberNameEmail(item.Name, item.Email); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := r.service.UpdateGlobalSubscriber(req.Context(), item); err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeOK(w, item)
+}
+
+func (r *Router) updateGlobalSubscriberComponents(w http.ResponseWriter, req *http.Request) {
+	id, ok := pathID(w, req)
+	if !ok {
+		return
+	}
+	var payload struct {
+		AllComponents bool    `json:"all_components"`
+		ComponentIDs  []int64 `json:"component_ids"`
+	}
+	if !decode(w, req, &payload) {
+		return
+	}
+	if err := r.service.SetGlobalSubscriberComponents(req.Context(), id, payload.AllComponents, payload.ComponentIDs); err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	item, err := r.service.GetGlobalSubscriber(req.Context(), id)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeOK(w, item)
+}
+
+func (r *Router) deleteGlobalSubscriber(w http.ResponseWriter, req *http.Request) {
+	id, ok := pathID(w, req)
+	if !ok {
+		return
+	}
+	if err := r.service.DeleteGlobalSubscriber(req.Context(), id); err != nil {
 		writeStorageError(w, err)
 		return
 	}
@@ -442,6 +570,16 @@ type componentPayload struct {
 	Enabled *bool `json:"enabled"`
 }
 
+type subscriberPayload struct {
+	storage.Subscriber
+	Enabled *bool `json:"enabled"`
+}
+
+type globalSubscriberPayload struct {
+	storage.GlobalSubscriber
+	Enabled *bool `json:"enabled"`
+}
+
 func writeOK(w http.ResponseWriter, data any) {
 	writeStatus(w, http.StatusOK, data)
 }
@@ -544,11 +682,12 @@ func pathID(w http.ResponseWriter, req *http.Request) (int64, bool) {
 func listOptions(req *http.Request) storage.ListOptions {
 	query := req.URL.Query()
 	opts := storage.ListOptions{
-		Page:        intQuery(query.Get("page"), 1),
-		PageSize:    intQuery(query.Get("page_size"), 20),
-		Keyword:     query.Get("keyword"),
-		Status:      query.Get("status"),
-		ComponentID: int64(intQuery(query.Get("component_id"), 0)),
+		Page:           intQuery(query.Get("page"), 1),
+		PageSize:       intQuery(query.Get("page_size"), 20),
+		Keyword:        query.Get("keyword"),
+		Status:         query.Get("status"),
+		ComponentID:    int64(intQuery(query.Get("component_id"), 0)),
+		RecipientEmail: query.Get("recipient_email"),
 	}
 	if value := query.Get("enabled"); value != "" {
 		enabled := value == "true" || value == "1"
@@ -632,10 +771,14 @@ func trimRepoSuffix(repo string) string {
 }
 
 func validateSubscriber(item storage.Subscriber) error {
-	if strings.TrimSpace(item.Name) == "" {
+	return validateSubscriberNameEmail(item.Name, item.Email)
+}
+
+func validateSubscriberNameEmail(name, email string) error {
+	if strings.TrimSpace(name) == "" {
 		return errors.New("name is required")
 	}
-	if strings.TrimSpace(item.Email) == "" {
+	if strings.TrimSpace(email) == "" {
 		return errors.New("email is required")
 	}
 	return nil

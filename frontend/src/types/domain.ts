@@ -33,10 +33,21 @@ export interface ComponentItem {
 
 export interface Subscriber {
   id: number;
-  component_id: number;
+  component_id?: number;
   name: string;
   email: string;
   enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GlobalSubscriber {
+  id: number;
+  name: string;
+  email: string;
+  enabled: boolean;
+  all_components: boolean;
+  component_ids?: number[];
   created_at: string;
   updated_at: string;
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +39,116 @@ func (s *Store) Close() error {
 
 func (s *Store) init(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := s.migrateSubscriberSchema(ctx); err != nil {
+		return err
+	}
+	return s.migrateLegacySubscribers(ctx)
+}
+
+func (s *Store) migrateSubscriberSchema(ctx context.Context) error {
+	hasColumn, err := s.hasColumn(ctx, "global_subscribers", "all_components")
+	if err != nil {
+		return err
+	}
+	if !hasColumn {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE global_subscribers ADD COLUMN all_components INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE global_subscribers SET all_components = 1`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) migrateLegacySubscribers(ctx context.Context) error {
+	hasTable, err := s.hasTable(ctx, "subscribers")
+	if err != nil || !hasTable {
+		return err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, component_id, name, email, enabled FROM subscribers`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type legacySubscriber struct {
+		name         string
+		email        string
+		enabled      bool
+		componentIDs map[int64]struct{}
+	}
+	legacy := map[string]*legacySubscriber{}
+	for rows.Next() {
+		var legacyID, componentID int64
+		var name, email string
+		var enabled int
+		if err := rows.Scan(&legacyID, &componentID, &name, &email, &enabled); err != nil {
+			return err
+		}
+		item := legacy[email]
+		if item == nil {
+			item = &legacySubscriber{name: name, email: email, componentIDs: map[int64]struct{}{}}
+			legacy[email] = item
+		}
+		if enabled == 1 {
+			item.enabled = true
+		}
+		item.componentIDs[componentID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, item := range legacy {
+		subscriberID, err := s.upsertGlobalSubscriber(ctx, item.name, item.email, item.enabled, false)
+		if err != nil {
+			return err
+		}
+		componentIDs := make([]int64, 0, len(item.componentIDs))
+		for componentID := range item.componentIDs {
+			componentIDs = append(componentIDs, componentID)
+		}
+		if err := s.replaceGlobalSubscriberComponents(ctx, subscriberID, componentIDs, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) hasTable(ctx context.Context, table string) (bool, error) {
+	var name string
+	err := s.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`, table).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return name == table, nil
+}
+
+func (s *Store) hasColumn(ctx context.Context, table, column string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (s *Store) CreateComponent(ctx context.Context, c *Component) error {
@@ -190,6 +300,18 @@ func (s *Store) CreateSubscriber(ctx context.Context, sub *Subscriber) error {
 	return err
 }
 
+func (s *Store) CreateGlobalSubscriber(ctx context.Context, sub *GlobalSubscriber) error {
+	id, err := s.upsertGlobalSubscriber(ctx, sub.Name, sub.Email, sub.Enabled, sub.AllComponents)
+	if err != nil {
+		return err
+	}
+	sub.ID = id
+	now := time.Now().UTC()
+	sub.CreatedAt = now
+	sub.UpdatedAt = now
+	return nil
+}
+
 func (s *Store) UpdateSubscriber(ctx context.Context, sub *Subscriber) error {
 	now := time.Now().UTC()
 	result, err := s.db.ExecContext(ctx, `
@@ -209,8 +331,42 @@ func (s *Store) UpdateSubscriber(ctx context.Context, sub *Subscriber) error {
 	return nil
 }
 
+func (s *Store) UpdateGlobalSubscriber(ctx context.Context, sub *GlobalSubscriber) error {
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE global_subscribers SET name = ?, email = ?, enabled = ?, all_components = ?, updated_at = ? WHERE id = ?`,
+		sub.Name, sub.Email, boolInt(sub.Enabled), boolInt(sub.AllComponents), now, sub.ID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) DeleteSubscriber(ctx context.Context, id int64) error {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM subscribers WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) DeleteGlobalSubscriber(ctx context.Context, id int64) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM global_subscribers WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -243,6 +399,140 @@ func (s *Store) ListSubscribers(ctx context.Context, componentID int64) ([]Subsc
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) ListGlobalSubscribers(ctx context.Context) ([]GlobalSubscriber, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT g.id, g.name, g.email, g.enabled, g.all_components, g.created_at, g.updated_at,
+		       COALESCE(group_concat(gsc.component_id), '')
+		FROM global_subscribers g
+		LEFT JOIN global_subscriber_components gsc ON gsc.subscriber_id = g.id
+		GROUP BY g.id
+		ORDER BY g.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GlobalSubscriber{}
+	for rows.Next() {
+		var item GlobalSubscriber
+		var enabled int
+		var allComponents int
+		var componentIDs string
+		if err := rows.Scan(&item.ID, &item.Name, &item.Email, &enabled, &allComponents, &item.CreatedAt, &item.UpdatedAt, &componentIDs); err != nil {
+			return nil, err
+		}
+		item.Enabled = enabled == 1
+		item.AllComponents = allComponents == 1
+		item.ComponentIDs = parseIDList(componentIDs)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) GetGlobalSubscriber(ctx context.Context, id int64) (*GlobalSubscriber, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT g.id, g.name, g.email, g.enabled, g.all_components, g.created_at, g.updated_at,
+		       COALESCE(group_concat(gsc.component_id), '')
+		FROM global_subscribers g
+		LEFT JOIN global_subscriber_components gsc ON gsc.subscriber_id = g.id
+		WHERE g.id = ?
+		GROUP BY g.id`, id)
+	var item GlobalSubscriber
+	var enabled int
+	var allComponents int
+	var componentIDs string
+	if err := row.Scan(&item.ID, &item.Name, &item.Email, &enabled, &allComponents, &item.CreatedAt, &item.UpdatedAt, &componentIDs); err != nil {
+		return nil, err
+	}
+	item.Enabled = enabled == 1
+	item.AllComponents = allComponents == 1
+	item.ComponentIDs = parseIDList(componentIDs)
+	return &item, nil
+}
+
+func (s *Store) SetGlobalSubscriberComponents(ctx context.Context, subscriberID int64, allComponents bool, componentIDs []int64) error {
+	return s.replaceGlobalSubscriberComponents(ctx, subscriberID, componentIDs, allComponents)
+}
+
+func (s *Store) ListSubscriberRecipients(ctx context.Context, componentID int64) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT g.email
+		FROM global_subscribers g
+		LEFT JOIN global_subscriber_components gsc ON gsc.subscriber_id = g.id
+		WHERE g.enabled = 1
+		  AND (
+			g.all_components = 1
+			OR gsc.component_id = ?
+		  )
+		ORDER BY g.email ASC`, componentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	recipients := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		recipients = append(recipients, email)
+	}
+	return recipients, rows.Err()
+}
+
+func (s *Store) upsertGlobalSubscriber(ctx context.Context, name, email string, enabled, allComponents bool) (int64, error) {
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO global_subscribers (name, email, enabled, all_components, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(email) DO UPDATE SET
+			name = excluded.name,
+			enabled = excluded.enabled,
+			all_components = CASE
+				WHEN excluded.all_components = 1 THEN 1
+				ELSE global_subscribers.all_components
+			END,
+			updated_at = excluded.updated_at`,
+		name, email, boolInt(enabled), boolInt(allComponents), now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil || id != 0 {
+		return id, err
+	}
+	var existingID int64
+	if err := s.db.QueryRowContext(ctx, `SELECT id FROM global_subscribers WHERE email = ?`, email).Scan(&existingID); err != nil {
+		return 0, err
+	}
+	return existingID, nil
+}
+
+func (s *Store) replaceGlobalSubscriberComponents(ctx context.Context, subscriberID int64, componentIDs []int64, allComponents bool) error {
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `UPDATE global_subscribers SET all_components = ?, updated_at = ? WHERE id = ?`,
+		boolInt(allComponents), now, subscriberID); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM global_subscriber_components WHERE subscriber_id = ?`, subscriberID); err != nil {
+		return err
+	}
+	if allComponents {
+		return nil
+	}
+	for _, componentID := range componentIDs {
+		if componentID <= 0 {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO global_subscriber_components (subscriber_id, component_id, created_at)
+			VALUES (?, ?, ?)`, subscriberID, componentID, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CreateCheckRecord(ctx context.Context, record *CheckRecord) error {
@@ -363,6 +653,10 @@ func (s *Store) ListNotificationRecords(ctx context.Context, opts ListOptions) (
 	if opts.Status != "" {
 		clauses = append(clauses, "nr.status = ?")
 		args = append(args, opts.Status)
+	}
+	if opts.RecipientEmail != "" {
+		clauses = append(clauses, "nr.recipient_email = ?")
+		args = append(args, opts.RecipientEmail)
 	}
 	where := strings.Join(clauses, " AND ")
 	var total int
@@ -570,6 +864,27 @@ func scanNotificationRecord(row scanner) (*NotificationRecord, error) {
 	item.ErrorMessage = errorMessage.String
 	item.SentAt = nullTimePtr(sentAt)
 	return &item, nil
+}
+
+func parseIDList(value string) []int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	ids := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func boolInt(value bool) int {

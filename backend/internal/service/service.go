@@ -53,16 +53,40 @@ func (s *Service) CreateSubscriber(ctx context.Context, sub *storage.Subscriber)
 	return s.store.CreateSubscriber(ctx, sub)
 }
 
+func (s *Service) CreateGlobalSubscriber(ctx context.Context, sub *storage.GlobalSubscriber) error {
+	return s.store.CreateGlobalSubscriber(ctx, sub)
+}
+
 func (s *Service) UpdateSubscriber(ctx context.Context, sub *storage.Subscriber) error {
 	return s.store.UpdateSubscriber(ctx, sub)
+}
+
+func (s *Service) UpdateGlobalSubscriber(ctx context.Context, sub *storage.GlobalSubscriber) error {
+	return s.store.UpdateGlobalSubscriber(ctx, sub)
 }
 
 func (s *Service) DeleteSubscriber(ctx context.Context, id int64) error {
 	return s.store.DeleteSubscriber(ctx, id)
 }
 
+func (s *Service) DeleteGlobalSubscriber(ctx context.Context, id int64) error {
+	return s.store.DeleteGlobalSubscriber(ctx, id)
+}
+
 func (s *Service) ListSubscribers(ctx context.Context, componentID int64) ([]storage.Subscriber, error) {
 	return s.store.ListSubscribers(ctx, componentID)
+}
+
+func (s *Service) ListGlobalSubscribers(ctx context.Context) ([]storage.GlobalSubscriber, error) {
+	return s.store.ListGlobalSubscribers(ctx)
+}
+
+func (s *Service) GetGlobalSubscriber(ctx context.Context, id int64) (*storage.GlobalSubscriber, error) {
+	return s.store.GetGlobalSubscriber(ctx, id)
+}
+
+func (s *Service) SetGlobalSubscriberComponents(ctx context.Context, id int64, allComponents bool, componentIDs []int64) error {
+	return s.store.SetGlobalSubscriberComponents(ctx, id, allComponents, componentIDs)
 }
 
 func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckRecord, error) {
@@ -185,11 +209,13 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 	if sent {
 		return nil
 	}
-	subscribers, err := s.store.ListSubscribers(ctx, component.ID)
+	recipients, err := s.store.ListSubscriberRecipients(ctx, component.ID)
 	if err != nil {
 		return err
 	}
-	recipients := uniqueRecipients(subscribers)
+	if len(recipients) == 0 {
+		return nil
+	}
 	subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, record.PreviousVersion, record.LatestVersion)
 	body := buildMailBody(component, record)
 	sendErr := s.notifier.Send(notifier.Message{
@@ -221,25 +247,6 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 		})
 	}
 	return sendErr
-}
-
-func uniqueRecipients(subscribers []storage.Subscriber) []string {
-	seen := map[string]bool{}
-	add := func(email string, out *[]string) {
-		email = strings.TrimSpace(email)
-		if email == "" || seen[email] {
-			return
-		}
-		seen[email] = true
-		*out = append(*out, email)
-	}
-	recipients := []string{}
-	for _, sub := range subscribers {
-		if sub.Enabled {
-			add(sub.Email, &recipients)
-		}
-	}
-	return recipients
 }
 
 func buildMailBody(component storage.Component, record storage.CheckRecord) string {

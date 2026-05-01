@@ -33,6 +33,25 @@ CREATE TABLE IF NOT EXISTS subscribers (
   FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS global_subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  all_components INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS global_subscriber_components (
+  subscriber_id INTEGER NOT NULL,
+  component_id INTEGER NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (subscriber_id, component_id),
+  FOREIGN KEY(subscriber_id) REFERENCES global_subscribers(id) ON DELETE CASCADE,
+  FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS check_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   component_id INTEGER NOT NULL,

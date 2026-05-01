@@ -119,6 +119,11 @@ POST /api/components/{id}/check
 
 ## 3. 订阅人接口
 
+订阅分两种：
+
+- 订阅人可以选择订阅全部组件。
+- 订阅人也可以只选择部分组件。
+
 ### 3.1 查询组件订阅人
 
 ```http
@@ -172,6 +177,55 @@ PUT /api/subscribers/{id}
 
 ```http
 DELETE /api/subscribers/{id}
+```
+
+### 3.5 查询订阅人
+
+```http
+GET /api/global-subscribers
+```
+
+### 3.6 新增订阅人
+
+```http
+POST /api/global-subscribers
+```
+
+请求体：
+
+```json
+{
+  "name": "张三",
+  "email": "zhangsan@example.com",
+  "enabled": true
+}
+```
+
+### 3.7 更新订阅人
+
+```http
+PUT /api/global-subscribers/{id}
+```
+
+### 3.8 删除订阅人
+
+```http
+DELETE /api/global-subscribers/{id}
+```
+
+### 3.9 更新订阅模块
+
+```http
+PUT /api/global-subscribers/{id}/components
+```
+
+请求体：
+
+```json
+{
+  "all_components": false,
+  "component_ids": [1, 3, 8]
+}
 ```
 
 ## 4. 检查记录接口
