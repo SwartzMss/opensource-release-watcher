@@ -363,7 +363,6 @@ func (r *Router) createGlobalSubscriber(w http.ResponseWriter, req *http.Request
 	if payload.Enabled != nil {
 		item.Enabled = *payload.Enabled
 	}
-	item.AllComponents = false
 	if err := validateSubscriberNameEmail(item.Name, item.Email); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -394,9 +393,10 @@ func (r *Router) updateGlobalSubscriber(w http.ResponseWriter, req *http.Request
 		return
 	}
 	var payload struct {
-		Name    *string `json:"name"`
-		Email   *string `json:"email"`
-		Enabled *bool   `json:"enabled"`
+		Name          *string `json:"name"`
+		Email         *string `json:"email"`
+		Enabled       *bool   `json:"enabled"`
+		AllComponents *bool   `json:"all_components"`
 	}
 	if !decode(w, req, &payload) {
 		return
@@ -414,6 +414,9 @@ func (r *Router) updateGlobalSubscriber(w http.ResponseWriter, req *http.Request
 	}
 	if payload.Enabled != nil {
 		item.Enabled = *payload.Enabled
+	}
+	if payload.AllComponents != nil {
+		item.AllComponents = *payload.AllComponents
 	}
 	if err := validateSubscriberNameEmail(item.Name, item.Email); err != nil {
 		writeError(w, http.StatusBadRequest, err)

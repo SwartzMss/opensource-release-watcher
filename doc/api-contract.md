@@ -210,7 +210,8 @@ POST /api/global-subscribers
 {
   "name": "张三",
   "email": "zhangsan@example.com",
-  "enabled": true
+  "enabled": true,
+  "all_components": false
 }
 ```
 
@@ -218,6 +219,17 @@ POST /api/global-subscribers
 
 ```http
 PUT /api/global-subscribers/{id}
+```
+
+请求体：
+
+```json
+{
+  "name": "张三",
+  "email": "zhangsan@example.com",
+  "enabled": true,
+  "all_components": false
+}
 ```
 
 ### 3.8 删除订阅人

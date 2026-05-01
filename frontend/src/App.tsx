@@ -652,7 +652,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       } else {
         const created = await api.createGlobalSubscriber(values);
         message.success('订阅人已创建');
-        setEditor({ subscriber: created, activeTab: 'modules' });
+        setEditor({ subscriber: created, activeTab: created.all_components ? 'basic' : 'modules' });
       }
       await load();
     } catch (error) {
@@ -686,6 +686,9 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
 
   async function saveModules(payload: { component_ids: number[] }) {
     if (!editor?.subscriber) {
+      return;
+    }
+    if (editor.subscriber.all_components) {
       return;
     }
     setSaving(true);
@@ -835,12 +838,13 @@ function SubscriberDetailDrawer(props: {
 }) {
   const [basicForm] = Form.useForm<Partial<GlobalSubscriber>>();
   const [moduleForm] = Form.useForm<{ component_ids: number[] }>();
+  const allComponentsEnabled = Form.useWatch('all_components', basicForm) ?? false;
 
   useEffect(() => {
     if (!props.subscriber) {
       basicForm.resetFields();
       moduleForm.resetFields();
-      basicForm.setFieldsValue({ enabled: true });
+      basicForm.setFieldsValue({ enabled: true, all_components: false });
       moduleForm.setFieldsValue({ component_ids: [] });
       return;
     }
@@ -851,6 +855,7 @@ function SubscriberDetailDrawer(props: {
       name: props.subscriber.name,
       email: props.subscriber.email,
       enabled: props.subscriber.enabled,
+      all_components: props.subscriber.all_components,
     });
     moduleForm.setFieldsValue({
       component_ids: selectedComponentIds,
@@ -871,7 +876,7 @@ function SubscriberDetailDrawer(props: {
       extra={props.activeTab === 'basic'
         ? <Button type="primary" loading={props.loading} onClick={() => basicForm.submit()}>保存</Button>
         : props.activeTab === 'modules'
-          ? <Button type="primary" loading={props.loading} onClick={() => moduleForm.submit()}>保存</Button>
+          ? <Button type="primary" loading={props.loading} disabled={allComponentsEnabled} onClick={() => moduleForm.submit()}>保存</Button>
           : <Button onClick={() => void props.onRefreshNotifications()}>刷新记录</Button>}
     >
       <Tabs
@@ -897,23 +902,41 @@ function SubscriberDetailDrawer(props: {
                 <Form.Item name="enabled" label="启用" valuePropName="checked">
                   <Switch />
                 </Form.Item>
+                <Form.Item name="all_components" label="订阅所有模块" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
               </Form>
             ),
           },
           {
             key: 'modules',
             label: '订阅模块',
+            disabled: allComponentsEnabled,
             children: (
               <Form
                 form={moduleForm}
                 layout="vertical"
-                onFinish={values => props.onSave({ component_ids: values.component_ids ?? [] })}
+                onFinish={values => {
+                  if (allComponentsEnabled) {
+                    return;
+                  }
+                  return props.onSave({ component_ids: values.component_ids ?? [] });
+                }}
                 initialValues={{ component_ids: [] }}
               >
+                {allComponentsEnabled && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="当前已订阅所有模块，模块选择仅供查看。"
+                    style={{ marginBottom: 16 }}
+                  />
+                )}
                 <Form.Item shouldUpdate noStyle>
                   {({ getFieldValue }) => (
                     <Form.Item label="选择订阅组件">
                       <Transfer
+                        disabled={allComponentsEnabled}
                         dataSource={props.components.map(item => ({
                           key: String(item.id),
                           title: item.name,
