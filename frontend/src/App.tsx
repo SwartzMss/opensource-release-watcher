@@ -315,8 +315,8 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     return {
       id: item.id,
       title: item.component_name,
-      subtitle: `${item.previous_version || '-'} → ${item.latest_version || '-'}`,
-      detail: `检查于 ${formatClock(item.checked_at)}`,
+      versionRange: `${item.previous_version || '-'} → ${item.latest_version || '-'}`,
+      checkedAt: formatClock(item.checked_at),
       meta: notificationMeta,
     };
   });
@@ -324,8 +324,9 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const recentNotificationRows = recentNotificationRecords.map(item => ({
     id: item.id,
     title: item.component_name,
-    subtitle: `${item.version || '-'} · ${item.recipient_email}`,
-    detail: `${item.status === 'sent' ? '通知成功' : '通知失败'} · ${formatClock(item.sent_at ?? item.created_at)}`,
+    target: item.recipient_email,
+    version: item.version || '-',
+    sentAt: formatClock(item.sent_at ?? item.created_at),
     meta: item.status === 'sent'
       ? { label: '通知成功', tone: 'success' as const }
       : { label: '通知失败', tone: 'danger' as const },
@@ -448,13 +449,11 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
             {recentUpdateRows.map(item => (
               <div key={item.id} className="dashboard-compact-item">
                 <div className="dashboard-compact-item-head">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.subtitle}</span>
-                  </div>
+                  <strong>{item.title}</strong>
                   <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
                 </div>
-                <div className="dashboard-compact-item-meta">{item.detail}</div>
+                <div className="dashboard-compact-item-version">{item.versionRange}</div>
+                <div className="dashboard-compact-item-footer">检查于 {item.checkedAt}</div>
               </div>
             ))}
           </div>
@@ -480,13 +479,11 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
             {recentNotificationRows.map(item => (
               <div key={item.id} className="dashboard-compact-item">
                 <div className="dashboard-compact-item-head">
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.subtitle}</span>
-                  </div>
+                  <strong>{item.title}</strong>
                   <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
                 </div>
-                <div className="dashboard-compact-item-meta">{item.detail}</div>
+                <div className="dashboard-compact-item-version">{item.version} · {item.target}</div>
+                <div className="dashboard-compact-item-footer">发送于 {item.sentAt}</div>
               </div>
             ))}
           </div>

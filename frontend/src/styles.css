@@ -479,7 +479,14 @@ a {
   gap: 12px;
 }
 
-.dashboard-compact-item-meta {
+.dashboard-compact-item-version {
+  color: #23211d;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dashboard-compact-item-footer {
   color: #7d786c;
   font-size: 12px;
   line-height: 1.4;
