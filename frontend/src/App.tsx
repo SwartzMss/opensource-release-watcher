@@ -441,7 +441,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         {recentUpdateRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无发现更新"
-            description="当上游出现新版本并完成检查后，这里会展示最近发现的更新。"
+            description="暂无可展示内容。"
           />
         ) : (
           <div className="dashboard-compact-list">
@@ -473,7 +473,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         {recentNotificationRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无通知记录"
-            description="当发现新版本并发送通知后，这里会展示最近通知结果。"
+            description="暂无可展示内容。"
           />
         ) : (
           <div className="dashboard-compact-list">
