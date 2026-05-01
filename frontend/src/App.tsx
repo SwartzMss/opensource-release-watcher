@@ -249,7 +249,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
 
   const latestRun = runs[0];
   const recentUpdates = checkRecords.slice(0, 5);
-  const recentNotificationRecords = notifications.slice(0, 5);
   const dashboardLoading = loading && !summary;
   const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
   const successRate = latestRun && latestRun.total_count > 0 ? latestRun.success_count / latestRun.total_count : null;
@@ -320,17 +319,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       meta: notificationMeta,
     };
   });
-
-  const recentNotificationRows = recentNotificationRecords.map(item => ({
-    id: item.id,
-    title: item.component_name,
-    target: item.recipient_email,
-    version: item.version || '-',
-    sentAt: formatClock(item.sent_at ?? item.created_at),
-    meta: item.status === 'sent'
-      ? { label: '通知成功', tone: 'success' as const }
-      : { label: '通知失败', tone: 'danger' as const },
-  }));
 
   const statusPill = latestRun
     ? latestRun.status === 'failed'
@@ -450,35 +438,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
                 </div>
                 <div className="dashboard-compact-item-version">{item.versionRange}</div>
                 <div className="dashboard-compact-item-footer">检查于 {item.checkedAt}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-      <Card
-        className="dashboard-panel"
-        title={(
-          <div className="dashboard-panel-title">
-            <span>最近通知记录</span>
-            <small>{recentNotificationRows.length} 条</small>
-          </div>
-        )}
-        loading={dashboardLoading}
-      >
-        {recentNotificationRows.length === 0 ? (
-          <DashboardEmptyState
-            title="暂无通知记录"
-          />
-        ) : (
-          <div className="dashboard-compact-list">
-            {recentNotificationRows.map(item => (
-              <div key={item.id} className="dashboard-compact-item">
-                <div className="dashboard-compact-item-head">
-                  <strong>{item.title}</strong>
-                  <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
-                </div>
-                <div className="dashboard-compact-item-version">{item.version} · {item.target}</div>
-                <div className="dashboard-compact-item-footer">发送于 {item.sentAt}</div>
               </div>
             ))}
           </div>
