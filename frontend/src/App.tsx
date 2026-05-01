@@ -424,11 +424,10 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         title={(
           <div className="dashboard-panel-title">
             <span>最近发现更新</span>
-            <small>{recentUpdateRows.length} 条</small>
           </div>
         )}
         loading={dashboardLoading}
-        >
+      >
         {recentUpdateRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无发现更新"
