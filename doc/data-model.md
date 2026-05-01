@@ -73,6 +73,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 | name | TEXT | 是 | 订阅人名称 |
 | email | TEXT | 是 | 订阅人邮箱 |
 | enabled | INTEGER | 是 | 是否启用 |
+| all_components | INTEGER | 是 | 是否订阅全部组件 |
 | created_at | DATETIME | 是 | 创建时间 |
 | updated_at | DATETIME | 是 | 更新时间 |
 
@@ -82,7 +83,40 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 UNIQUE(email)
 ```
 
-### 2.4 check_records
+### 2.4 global_subscriber_components
+
+保存订阅人与组件的多对多映射。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| subscriber_id | INTEGER | 是 | 订阅人 ID |
+| component_id | INTEGER | 是 | 组件 ID |
+| created_at | DATETIME | 是 | 关联时间 |
+
+建议约束：
+
+```sql
+PRIMARY KEY(subscriber_id, component_id)
+FOREIGN KEY(subscriber_id) REFERENCES global_subscribers(id)
+FOREIGN KEY(component_id) REFERENCES components(id)
+```
+
+### 2.5 schema_migrations
+
+保存一次性迁移状态。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| name | TEXT | 是 | 迁移名称 |
+| applied_at | DATETIME | 是 | 应用时间 |
+
+建议约束：
+
+```sql
+PRIMARY KEY(name)
+```
+
+### 2.6 check_records
 
 保存每次版本检查结果。
 
@@ -110,7 +144,7 @@ CREATE INDEX idx_check_records_component_id ON check_records(component_id);
 CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
 ```
 
-### 2.5 notification_records
+### 2.7 notification_records
 
 保存邮件通知记录。
 
@@ -136,7 +170,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 FOREIGN KEY(check_record_id) REFERENCES check_records(id)
 ```
 
-### 2.6 system_runs
+### 2.8 system_runs
 
 保存全量检查任务运行记录。
 
@@ -190,8 +224,23 @@ CREATE TABLE global_subscribers (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   enabled INTEGER NOT NULL DEFAULT 1,
+  all_components INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL
+);
+
+CREATE TABLE global_subscriber_components (
+  subscriber_id INTEGER NOT NULL,
+  component_id INTEGER NOT NULL,
+  created_at DATETIME NOT NULL,
+  PRIMARY KEY (subscriber_id, component_id),
+  FOREIGN KEY(subscriber_id) REFERENCES global_subscribers(id),
+  FOREIGN KEY(component_id) REFERENCES components(id)
+);
+
+CREATE TABLE schema_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at DATETIME NOT NULL
 );
 
 CREATE TABLE check_records (
