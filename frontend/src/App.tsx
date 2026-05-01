@@ -259,7 +259,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
   ];
 
-  const healthRows: Array<{ label: string; value: string; extra?: string }> = [
+  const healthRows: Array<{ label: string; value: string; extra?: string; tone?: 'emphasis' }> = [
     {
       label: '调度状态',
       value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
@@ -267,6 +267,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     {
       label: '最近检查',
       value: formatClock(latestCheckAt),
+      tone: 'emphasis',
     },
     {
       label: '邮件功能',
@@ -348,7 +349,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         >
           <div className="dashboard-health-list">
             {healthRows.map(item => (
-              <div key={item.label} className="dashboard-health-row">
+              <div key={item.label} className={`dashboard-health-row${item.tone === 'emphasis' ? ' dashboard-health-row-emphasis' : ''}`}>
                 <div>
                   <strong>{item.label}</strong>
                   {item.extra ? <span>{item.extra}</span> : null}
@@ -1605,7 +1606,9 @@ function formatTime(value?: string) {
 
 function formatClock(value?: string) {
   if (!value) return '-';
-  return new Date(value).toLocaleTimeString('zh-CN', {
+  return new Date(value).toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,

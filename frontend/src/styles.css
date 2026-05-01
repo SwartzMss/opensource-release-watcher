@@ -359,6 +359,12 @@ a {
   overflow-wrap: anywhere;
 }
 
+.dashboard-health-row-emphasis strong {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .dashboard-trend-list {
   display: grid;
   gap: 14px;
