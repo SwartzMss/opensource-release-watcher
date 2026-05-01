@@ -250,6 +250,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const latestRun = runs[0];
   const recentUpdates = checkRecords.slice(0, 5);
   const dashboardLoading = loading && !summary;
+  const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
   const metricCards = [
     { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
     { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
@@ -262,6 +263,10 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     {
       label: '调度状态',
       value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
+    },
+    {
+      label: '最近检查',
+      value: formatClock(latestCheckAt),
     },
     {
       label: '邮件功能',
