@@ -412,7 +412,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           {alertRows.length === 0 ? (
             <DashboardEmptyState
               title="暂无异常"
-              description="最近一次检查和通知没有发现需要处理的问题。"
             />
           ) : (
             <div className="dashboard-alert-list">
@@ -442,7 +441,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         {recentUpdateRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无发现更新"
-            description="暂无可展示内容。"
           />
         ) : (
           <div className="dashboard-compact-list">
@@ -472,7 +470,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         {recentNotificationRows.length === 0 ? (
           <DashboardEmptyState
             title="暂无通知记录"
-            description="暂无可展示内容。"
           />
         ) : (
           <div className="dashboard-compact-list">
@@ -509,11 +506,10 @@ function formatInterval(seconds?: number) {
   return formatDuration(seconds);
 }
 
-function DashboardEmptyState(props: { title: string; description: string }) {
+function DashboardEmptyState(props: { title: string }) {
   return (
     <div className="dashboard-empty">
       <strong>{props.title}</strong>
-      <span>{props.description}</span>
     </div>
   );
 }

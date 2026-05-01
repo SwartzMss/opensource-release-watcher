@@ -513,12 +513,6 @@ a {
   font-size: 14px;
 }
 
-.dashboard-empty span {
-  display: block;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .toolbar-card .ant-space {
   width: 100%;
 }
