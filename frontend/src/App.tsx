@@ -370,7 +370,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           title={(
             <div className="dashboard-panel-title">
               <span>系统概览</span>
-              <small>状态与运行情况</small>
             </div>
           )}
           loading={dashboardLoading}
@@ -404,7 +403,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           title={(
             <div className="dashboard-panel-title">
               <span>异常提醒</span>
-              <small>需要关注的系统问题</small>
             </div>
           )}
           loading={dashboardLoading}
