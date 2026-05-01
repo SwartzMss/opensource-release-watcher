@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -49,6 +50,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if strings.HasPrefix(req.URL.Path, "/api/") && !r.isPublicAPI(req) && !r.authenticated(req) {
 		writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
 		return
+	}
+	if strings.HasPrefix(req.URL.Path, "/api/") && req.Method != http.MethodGet {
+		log.Printf("api request method=%s path=%s remote=%s", req.Method, req.URL.Path, req.RemoteAddr)
 	}
 	r.mux.ServeHTTP(w, req)
 }
@@ -101,6 +105,7 @@ func (r *Router) login(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if payload.Username != r.auth.Username || payload.Password != r.auth.Password {
+		log.Printf("login failed username=%s remote=%s", payload.Username, req.RemoteAddr)
 		writeError(w, http.StatusUnauthorized, errors.New("invalid username or password"))
 		return
 	}
@@ -114,6 +119,7 @@ func (r *Router) login(w http.ResponseWriter, req *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secureCookie(req),
 	})
+	log.Printf("login success username=%s remote=%s", payload.Username, req.RemoteAddr)
 	writeOK(w, map[string]string{"username": payload.Username})
 }
 
@@ -127,6 +133,7 @@ func (r *Router) logout(w http.ResponseWriter, req *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secureCookie(req),
 	})
+	log.Printf("logout remote=%s", req.RemoteAddr)
 	writeOK(w, map[string]bool{"logged_out": true})
 }
 
@@ -172,6 +179,7 @@ func (r *Router) createComponent(w http.ResponseWriter, req *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	log.Printf("create component request completed name=%s repo=%s", item.Name, item.RepoURL)
 	writeStatus(w, http.StatusCreated, item)
 }
 
@@ -434,6 +442,7 @@ func (r *Router) updateGlobalSubscriberComponents(w http.ResponseWriter, req *ht
 		writeStorageError(w, err)
 		return
 	}
+	log.Printf("update global subscriber components request completed id=%d all_components=%t component_ids=%v", id, payload.AllComponents, payload.ComponentIDs)
 	item, err := r.service.GetGlobalSubscriber(req.Context(), id)
 	if err != nil {
 		writeStorageError(w, err)
@@ -457,6 +466,7 @@ func (r *Router) deleteGlobalSubscriber(w http.ResponseWriter, req *http.Request
 func (r *Router) runChecks(w http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithTimeout(req.Context(), 5*60*1000*1000*1000)
 	defer cancel()
+	log.Printf("manual run checks requested remote=%s", req.RemoteAddr)
 	run, err := r.service.RunChecks(ctx, "manual")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -523,6 +533,7 @@ func (r *Router) testNotification(w http.ResponseWriter, req *http.Request) {
 
 	ctx, cancel := context.WithTimeout(req.Context(), 45*time.Second)
 	defer cancel()
+	log.Printf("test notification requested recipient=%s remote=%s", recipient, req.RemoteAddr)
 	if err := r.service.SendTestNotification(ctx, recipient); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return

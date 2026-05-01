@@ -17,6 +17,7 @@ import (
 
 func main() {
 	cfg := config.Load()
+	log.Printf("starting opensource-release-watcher server addr=%s db=%s check_interval=%s", cfg.ServerAddr, cfg.DBPath, cfg.CheckInterval)
 
 	store, err := storage.Open(cfg.DBPath)
 	if err != nil {

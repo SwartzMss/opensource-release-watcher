@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -27,14 +28,17 @@ func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifie
 }
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
+	log.Printf("create component name=%s repo=%s enabled=%t", c.Name, c.RepoURL, c.Enabled)
 	return s.store.CreateComponent(ctx, c)
 }
 
 func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) error {
+	log.Printf("update component id=%d name=%s repo=%s enabled=%t", c.ID, c.Name, c.RepoURL, c.Enabled)
 	return s.store.UpdateComponent(ctx, c)
 }
 
 func (s *Service) DeleteComponent(ctx context.Context, id int64) error {
+	log.Printf("delete component id=%d", id)
 	return s.store.DeleteComponent(ctx, id)
 }
 
@@ -51,26 +55,32 @@ func (s *Service) LatestComponentVersion(ctx context.Context, repoURL, checkStra
 }
 
 func (s *Service) CreateSubscriber(ctx context.Context, sub *storage.Subscriber) error {
+	log.Printf("create subscriber component_id=%d email=%s enabled=%t", sub.ComponentID, sub.Email, sub.Enabled)
 	return s.store.CreateSubscriber(ctx, sub)
 }
 
 func (s *Service) CreateGlobalSubscriber(ctx context.Context, sub *storage.GlobalSubscriber) error {
+	log.Printf("create global subscriber email=%s enabled=%t all_components=%t", sub.Email, sub.Enabled, sub.AllComponents)
 	return s.store.CreateGlobalSubscriber(ctx, sub)
 }
 
 func (s *Service) UpdateSubscriber(ctx context.Context, sub *storage.Subscriber) error {
+	log.Printf("update subscriber id=%d component_id=%d email=%s enabled=%t", sub.ID, sub.ComponentID, sub.Email, sub.Enabled)
 	return s.store.UpdateSubscriber(ctx, sub)
 }
 
 func (s *Service) UpdateGlobalSubscriber(ctx context.Context, sub *storage.GlobalSubscriber) error {
+	log.Printf("update global subscriber id=%d email=%s enabled=%t all_components=%t", sub.ID, sub.Email, sub.Enabled, sub.AllComponents)
 	return s.store.UpdateGlobalSubscriber(ctx, sub)
 }
 
 func (s *Service) DeleteSubscriber(ctx context.Context, id int64) error {
+	log.Printf("delete subscriber id=%d", id)
 	return s.store.DeleteSubscriber(ctx, id)
 }
 
 func (s *Service) DeleteGlobalSubscriber(ctx context.Context, id int64) error {
+	log.Printf("delete global subscriber id=%d", id)
 	return s.store.DeleteGlobalSubscriber(ctx, id)
 }
 
@@ -87,6 +97,7 @@ func (s *Service) GetGlobalSubscriber(ctx context.Context, id int64) (*storage.G
 }
 
 func (s *Service) SetGlobalSubscriberComponents(ctx context.Context, id int64, allComponents bool, componentIDs []int64) error {
+	log.Printf("set global subscriber components id=%d all_components=%t component_ids=%v", id, allComponents, componentIDs)
 	return s.store.SetGlobalSubscriberComponents(ctx, id, allComponents, componentIDs)
 }
 
@@ -95,6 +106,7 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("check component started id=%d name=%s repo=%s", component.ID, component.Name, component.RepoURL)
 	record := s.checker.Check(ctx, *component)
 	if err := s.store.CreateCheckRecord(ctx, &record); err != nil {
 		return nil, err
@@ -107,6 +119,7 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 			record.ErrorMessage = err.Error()
 		}
 	}
+	log.Printf("check component finished id=%d status=%s has_update=%t latest=%s previous=%s", component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
 	return &record, nil
 }
 
@@ -115,6 +128,8 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 	if err != nil {
 		return nil, err
 	}
+	startedAt := time.Now().UTC()
+	log.Printf("run checks started trigger=%s components=%d", triggerType, len(components))
 	run := &storage.SystemRun{
 		TriggerType: triggerType,
 		Status:      "running",
@@ -150,6 +165,7 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 	if err := s.store.FinishSystemRun(ctx, run); err != nil {
 		return nil, err
 	}
+	log.Printf("run checks finished trigger=%s total=%d success=%d failed=%d duration=%s", triggerType, run.TotalCount, run.SuccessCount, run.FailedCount, time.Since(startedAt).Round(time.Millisecond))
 	return run, nil
 }
 
@@ -181,6 +197,7 @@ func (s *Service) SendTestNotification(ctx context.Context, recipient string) er
 	if recipient == "" {
 		return fmt.Errorf("recipient is required")
 	}
+	log.Printf("send test notification recipient=%s", recipient)
 	now := time.Now().Format(time.RFC3339)
 	return s.notifier.Send(notifier.Message{
 		To:      []string{recipient},
@@ -228,6 +245,7 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 	if len(recipients) == 0 {
 		return nil
 	}
+	log.Printf("notify update started component_id=%d name=%s version=%s recipients=%d", component.ID, component.Name, record.LatestVersion, len(recipients))
 	subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, record.PreviousVersion, record.LatestVersion)
 	body := buildMailBody(component, record)
 	sendErr := s.notifier.Send(notifier.Message{
@@ -257,6 +275,11 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 			ErrorMessage:   errorMessage,
 			SentAt:         sentAt,
 		})
+	}
+	if sendErr != nil {
+		log.Printf("notify update failed component_id=%d version=%s err=%v", component.ID, record.LatestVersion, sendErr)
+	} else {
+		log.Printf("notify update finished component_id=%d version=%s recipients=%d", component.ID, record.LatestVersion, len(recipients))
 	}
 	return sendErr
 }
