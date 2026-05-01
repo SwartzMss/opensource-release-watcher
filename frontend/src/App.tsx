@@ -259,11 +259,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       extra: latestRun ? `最近检查 ${formatTime(latestCheckAt)}` : '尚未执行过检查',
     },
     {
-      label: 'GitHub API',
-      value: !latestRun ? '待检测' : latestRun.failed_count === 0 ? '正常' : '异常',
-      extra: latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录',
-    },
-    {
       label: 'Mail',
       value: mailStatus
         ? (mailStatus.configured ? (mailStatus.connected ? '正常' : '异常') : '未配置')
@@ -273,12 +268,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     {
       label: '最近检查',
       value: formatTime(latestCheckAt),
-      extra: summary?.last_run_duration_seconds ? `耗时 ${formatDuration(summary.last_run_duration_seconds)}` : '暂无运行耗时',
-    },
-    {
-      label: '下次检查',
-      value: summary?.next_check_at ? formatTime(summary.next_check_at) : (summary?.check_interval_seconds ? `每 ${formatInterval(summary.check_interval_seconds)}` : '未配置'),
-      extra: summary?.check_interval_seconds ? `周期 ${formatInterval(summary.check_interval_seconds)}` : '未配置周期',
+      extra: latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录',
     },
   ];
 
@@ -353,22 +343,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
             </div>
             <div className="dashboard-trend-bar"><span style={{ width: latestCheckAt ? '100%' : '0%' }} /></div>
             <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录'}</small>
-          </div>
-          <div className="dashboard-trend-row">
-            <div className="dashboard-trend-row-head">
-              <span>下次检查</span>
-              <strong>{summary?.next_check_at ? formatTime(summary.next_check_at) : (summary?.check_interval_seconds ? `每 ${formatInterval(summary.check_interval_seconds)}` : '未配置')}</strong>
-            </div>
-            <div className="dashboard-trend-bar"><span style={{ width: summary?.next_check_at ? '100%' : '0%' }} /></div>
-            <small>{summary?.check_interval_seconds ? `周期 ${formatInterval(summary.check_interval_seconds)}` : '未配置周期'}</small>
-          </div>
-          <div className="dashboard-trend-row">
-            <div className="dashboard-trend-row-head">
-              <span>运行耗时</span>
-              <strong>{summary?.last_run_duration_seconds ? formatDuration(summary.last_run_duration_seconds) : '-'}</strong>
-            </div>
-            <div className="dashboard-trend-bar"><span style={{ width: summary?.last_run_duration_seconds ? '100%' : '0%' }} /></div>
-            <small>{summary?.last_run_duration_seconds ? `最近一次运行 ${formatDuration(summary.last_run_duration_seconds)}` : '暂无运行耗时'}</small>
           </div>
         </div>
       </Card>
