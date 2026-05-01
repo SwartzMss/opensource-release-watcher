@@ -66,6 +66,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 ### 2.3 global_subscribers
 
 保存订阅人主表。
+删除该订阅人时，会同时清理该邮箱在 `notification_records` 中的历史通知记录，以及对应的组件订阅进度记录。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |

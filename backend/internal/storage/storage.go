@@ -418,18 +418,46 @@ func (s *Store) DeleteSubscriber(ctx context.Context, id int64) error {
 }
 
 func (s *Store) DeleteGlobalSubscriber(ctx context.Context, id int64) error {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM global_subscribers WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
+	}
+	var commitErr error
+	defer func() {
+		if commitErr != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var email string
+	if err := tx.QueryRowContext(ctx, `SELECT email FROM global_subscribers WHERE id = ?`, id).Scan(&email); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			commitErr = sql.ErrNoRows
+			return commitErr
+		}
+		commitErr = err
+		return commitErr
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notification_records WHERE recipient_email = ?`, email); err != nil {
+		commitErr = err
+		return commitErr
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM global_subscribers WHERE id = ?`, id)
+	if err != nil {
+		commitErr = err
+		return commitErr
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		commitErr = err
+		return commitErr
 	}
 	if affected == 0 {
-		return sql.ErrNoRows
+		commitErr = sql.ErrNoRows
+		return commitErr
 	}
-	return nil
+	commitErr = tx.Commit()
+	return commitErr
 }
 
 func (s *Store) ListSubscribers(ctx context.Context, componentID int64) ([]Subscriber, error) {

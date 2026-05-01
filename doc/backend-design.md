@@ -92,7 +92,7 @@ backend/
 | POST | `/api/global-subscribers` | 新增订阅人 |
 | PUT | `/api/global-subscribers/{id}` | 更新订阅人 |
 | PUT | `/api/global-subscribers/{id}/components` | 更新订阅模块 |
-| DELETE | `/api/global-subscribers/{id}` | 删除订阅人 |
+| DELETE | `/api/global-subscribers/{id}` | 删除订阅人，并清理该邮箱的通知历史 |
 | GET | `/api/components/{id}/subscribers` | 查询组件订阅人 |
 | POST | `/api/components/{id}/subscribers` | 新增订阅人 |
 | PUT | `/api/subscribers/{id}` | 更新订阅人 |
