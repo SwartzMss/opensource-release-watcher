@@ -250,7 +250,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const latestRun = runs[0];
   const recentUpdates = checkRecords.slice(0, 5);
   const dashboardLoading = loading && !summary;
-  const successRate = latestRun && latestRun.total_count > 0 ? latestRun.success_count / latestRun.total_count : null;
   const metricCards = [
     { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
     { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
@@ -354,16 +353,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
                 </Tag>
               </div>
             ))}
-          </div>
-          <div className="dashboard-trend-list dashboard-health-metrics">
-            <div className="dashboard-trend-row">
-              <div className="dashboard-trend-row-head">
-                <span>检查结果</span>
-                <strong>{latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '-'}</strong>
-              </div>
-              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((successRate ?? 0) * 100)}%` }} /></div>
-              <small>{latestRun ? `最近一次运行 ${formatPercent(successRate)}` : '暂无运行记录'}</small>
-            </div>
           </div>
         </Card>
         <Card
