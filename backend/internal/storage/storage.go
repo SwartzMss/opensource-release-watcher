@@ -45,7 +45,17 @@ func (s *Store) init(ctx context.Context) error {
 	if err := s.migrateSubscriberSchema(ctx); err != nil {
 		return err
 	}
-	return s.migrateLegacySubscribers(ctx)
+	done, err := s.hasMigration(ctx, "legacy_subscribers_migrated")
+	if err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+	if err := s.migrateLegacySubscribers(ctx); err != nil {
+		return err
+	}
+	return s.markMigrationApplied(ctx, "legacy_subscribers_migrated")
 }
 
 func (s *Store) migrateSubscriberSchema(ctx context.Context) error {
@@ -115,6 +125,29 @@ func (s *Store) migrateLegacySubscribers(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) hasMigration(ctx context.Context, name string) (bool, error) {
+	var found string
+	err := s.db.QueryRowContext(ctx, `SELECT name FROM schema_migrations WHERE name = ?`, name).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return found == name, nil
+}
+
+func (s *Store) markMigrationApplied(ctx context.Context, name string) error {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO schema_migrations (name, applied_at)
+		VALUES (?, ?)
+		ON CONFLICT(name) DO UPDATE SET applied_at = excluded.applied_at`,
+		name, now,
+	)
+	return err
 }
 
 func (s *Store) hasTable(ctx context.Context, table string) (bool, error) {

@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS global_subscriber_components (
   FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS check_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   component_id INTEGER NOT NULL,
