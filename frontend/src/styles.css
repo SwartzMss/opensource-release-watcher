@@ -234,7 +234,7 @@ a {
 .dashboard-split-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   margin-bottom: 16px;
 }
 
