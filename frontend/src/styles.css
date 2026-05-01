@@ -486,17 +486,24 @@ a {
   margin-bottom: 14px;
 }
 
+.filter-bar-head > div {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
 .filter-bar-head strong {
-  display: block;
   font-size: 14px;
   line-height: 1.3;
+  white-space: nowrap;
 }
 
 .filter-bar-head span {
   color: #746f65;
-  display: block;
   font-size: 12px;
-  margin-top: 2px;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 .filter-space {
@@ -772,6 +779,17 @@ a {
     align-items: flex-start;
     flex-direction: column;
     margin-bottom: 12px;
+  }
+
+  .filter-bar-head > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .filter-bar-head strong,
+  .filter-bar-head span {
+    white-space: normal;
   }
 
   .mobile-item-grid {
