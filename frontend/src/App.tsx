@@ -325,29 +325,11 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     };
   });
 
-  const statusPill = latestRun
-    ? latestRun.status === 'failed'
-      ? '最近失败'
-      : latestRun.status === 'running'
-        ? '运行中'
-        : '调度正常'
-    : '待运行';
-
   return (
     <section className="dashboard-page">
       <PageHeader
         title="仪表盘"
         description="查看开源组件监控整体状态。"
-        action={(
-          <div className="dashboard-header-actions">
-            <div className="dashboard-status-strip">
-              <Tag color={latestRun?.status === 'failed' ? 'red' : latestRun?.status === 'running' ? 'blue' : 'green'}>
-                {statusPill}
-              </Tag>
-              <span>最近检查：{formatClock(latestCheckAt)}</span>
-            </div>
-          </div>
-        )}
       />
       <div className="metric-grid dashboard-metric-grid">
         {metricCards.map(card => (

@@ -278,26 +278,6 @@ a {
   color: #23211d;
 }
 
-.dashboard-header-actions {
-  align-items: flex-end;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dashboard-status-strip {
-  align-items: center;
-  color: #5c574d;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.dashboard-status-strip span {
-  font-size: 13px;
-}
-
 .dashboard-header-meta {
   background: rgba(255, 255, 255, 0.52);
   border: 1px solid rgba(32, 35, 31, 0.08);
