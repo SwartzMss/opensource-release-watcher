@@ -216,8 +216,6 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
 function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
-  const [updates, setUpdates] = useState<CheckRecord[]>([]);
-  const [sentNotifications, setSentNotifications] = useState<NotificationRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
@@ -225,18 +223,14 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextUpdates, nextSentNotifications, nextNotifications, nextMailStatus] = await Promise.all([
+      const [nextSummary, nextRuns, nextNotifications, nextMailStatus] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
-        api.checkRecords({ has_update: true, status: 'success', page_size: 100 }),
-        api.notifications({ status: 'sent', page_size: 100 }),
         api.notifications({ page_size: 10 }),
         api.mailStatus(),
       ]);
       setSummary(nextSummary);
       setRuns(nextRuns.items);
-      setUpdates(nextUpdates.items);
-      setSentNotifications(nextSentNotifications.items);
       setNotifications(nextNotifications.items);
       setMailStatus(nextMailStatus);
     } catch (error) {
@@ -253,21 +247,11 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const latestRun = runs[0];
   const dashboardLoading = loading && !summary;
   const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
-  const latestRunUpdates = latestRun
-    ? updates.filter(item => new Date(item.checked_at).getTime() >= new Date(latestRun.started_at).getTime())
-    : updates;
-  const sentVersionSet = new Set(sentNotifications.map(item => `${item.component_id}:${item.version}`));
-  const pendingUpdates = latestRunUpdates.filter(item => !sentVersionSet.has(`${item.component_id}:${item.latest_version}`));
-  const completedUpdates = latestRunUpdates.length - pendingUpdates.length;
   const recentNotifications = notifications.slice(0, 6);
   const notificationSuccessCount = notifications.filter(item => item.status === 'sent').length;
   const successRate = latestRun && latestRun.total_count > 0 ? latestRun.success_count / latestRun.total_count : null;
   const notificationSuccessRate = notifications.length > 0 ? notificationSuccessCount / notifications.length : null;
-  const pendingRate = latestRun && latestRun.total_count > 0 ? pendingUpdates.length / latestRun.total_count : null;
-
   const metricCards = [
-    { label: '待处理更新', value: pendingUpdates.length, tone: 'warning' as const },
-    { label: '发现更新', value: latestRunUpdates.length, tone: 'warning' as const },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
     { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
@@ -337,48 +321,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         ))}
       </div>
       <div className="dashboard-summary-row">
-        <div className="dashboard-summary-chip">
-          <span>待评估</span>
-          <strong>{pendingUpdates.length}</strong>
-        </div>
-        <div className="dashboard-summary-chip">
-          <span>待通知</span>
-          <strong>{pendingUpdates.length}</strong>
-        </div>
-        <div className="dashboard-summary-chip">
-          <span>已完成</span>
-          <strong>{completedUpdates}</strong>
-        </div>
-        <div className="dashboard-summary-chip">
-          <span>已忽略</span>
-          <strong>0</strong>
-        </div>
-      </div>
-      <div className="dashboard-dual-grid">
-      <Card
-        className="dashboard-panel"
-        title={(
-          <div className="dashboard-panel-title">
-            <span>待处理更新</span>
-            <small>当前待处理 {pendingUpdates.length} 条</small>
-          </div>
-        )}
-        loading={dashboardLoading}
-      >
-          {pendingUpdates.length === 0 ? (
-            <DashboardEmptyState
-              title="暂无待处理更新"
-              description={latestRun
-                ? `最近一次检查 ${latestRun.success_count}/${latestRun.total_count} 成功，全部已完成或暂无新增更新。`
-                : '系统还没有执行过检查。'}
-              footer={latestCheckAt ? `最近检查：${formatTime(latestCheckAt)}` : undefined}
-            />
-          ) : isMobile ? (
-            <DashboardUpdateList updates={pendingUpdates} compact />
-          ) : (
-            <DashboardUpdateList updates={pendingUpdates} />
-          )}
-        </Card>
         <Card
           className="dashboard-panel"
           title={(
@@ -404,18 +346,6 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           </div>
         </Card>
       </div>
-      <Card
-        className="dashboard-panel"
-        title={(
-          <div className="dashboard-panel-title">
-            <span>最近检查记录</span>
-            <small>仅展示最近 5 条</small>
-          </div>
-        )}
-        loading={dashboardLoading}
-      >
-        <DashboardRunList runs={runs.slice(0, 5)} />
-      </Card>
       <div className="dashboard-bottom-grid">
         <Card
           className="dashboard-panel"
@@ -480,56 +410,16 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
             </div>
             <div className="dashboard-trend-row">
               <div className="dashboard-trend-row-head">
-                <span>当前待处理</span>
-                <strong>{pendingUpdates.length}</strong>
+                <span>最近检查</span>
+                <strong>{formatTime(latestCheckAt)}</strong>
               </div>
-              <div className="dashboard-trend-bar"><span style={{ width: `${Math.min(100, pendingUpdates.length * 18)}%` }} /></div>
-              <small>{latestRun ? `${pendingUpdates.length}/${latestRun.total_count}` : '暂无运行记录'}</small>
-            </div>
-            <div className="dashboard-trend-row">
-              <div className="dashboard-trend-row-head">
-                <span>待处理占比</span>
-                <strong>{formatPercent(pendingRate)}</strong>
-              </div>
-              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((pendingRate ?? 0) * 100)}%` }} /></div>
-              <small>{latestRun ? `${pendingUpdates.length}/${latestRun.total_count}` : '暂无运行记录'}</small>
+              <div className="dashboard-trend-bar"><span style={{ width: latestCheckAt ? '100%' : '0%' }} /></div>
+              <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录'}</small>
             </div>
           </div>
         </Card>
       </div>
     </section>
-  );
-}
-
-function DashboardRunList(props: { runs: SystemRun[] }) {
-  if (props.runs.length === 0) {
-    return (
-      <DashboardEmptyState
-        title="暂无检查记录"
-        description="系统会在定时任务触发后开始显示最近运行信息。"
-      />
-    );
-  }
-
-  return (
-    <div className="dashboard-run-list">
-      {props.runs.map(run => (
-        <div key={run.id} className="dashboard-run-row">
-          <div className="dashboard-run-row-main">
-            <div className="dashboard-run-row-head">
-              <strong>{run.trigger_type === 'scheduler' ? 'scheduler' : 'manual'}</strong>
-              <StatusTag status={run.status} />
-            </div>
-            <div className="dashboard-run-row-meta">
-              {run.total_count} 个组件 · {run.success_count} 成功 · {run.failed_count} 失败 · 耗时 {formatDuration(getRunDurationSeconds(run))}
-            </div>
-            <div className="dashboard-run-row-meta">
-              {formatTime(run.started_at)} - {formatTime(run.finished_at)}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -541,14 +431,6 @@ function DashboardEmptyState(props: { title: string; description: string; footer
       {props.footer ? <small>{props.footer}</small> : null}
     </div>
   );
-}
-
-function getRunDurationSeconds(run: SystemRun) {
-  if (!run.finished_at) return null;
-  const start = new Date(run.started_at).getTime();
-  const end = new Date(run.finished_at).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
-  return Math.round((end - start) / 1000);
 }
 
 function formatDuration(seconds?: number | null) {
