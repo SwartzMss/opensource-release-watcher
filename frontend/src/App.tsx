@@ -84,7 +84,7 @@ export function App() {
 
   const pageContent = (
     <>
-      {page === 'dashboard' && <Dashboard isMobile={isMobile} onNavigate={setPage} />}
+      {page === 'dashboard' && <Dashboard isMobile={isMobile} />}
       {page === 'components' && <Components isMobile={isMobile} />}
       {page === 'subscribers' && <Subscribers isMobile={isMobile} />}
       {page === 'checks' && <Checks isMobile={isMobile} />}
@@ -213,7 +213,7 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   );
 }
 
-function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (page: PageKey) => void }) {
+function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
   const [updates, setUpdates] = useState<CheckRecord[]>([]);
@@ -221,7 +221,6 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
-  const [runningCheck, setRunningCheck] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -244,19 +243,6 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
       message.error(String(error));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function runChecks() {
-    setRunningCheck(true);
-    try {
-      await api.runChecks();
-      message.success('全量检查已开始');
-      await load();
-    } catch (error) {
-      message.error(String(error));
-    } finally {
-      setRunningCheck(false);
     }
   }
 
@@ -339,11 +325,6 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
               </Tag>
               <span>最近检查：{formatTime(latestCheckAt)}</span>
             </div>
-            <Space wrap>
-              <Button type="primary" loading={runningCheck} onClick={() => void runChecks()}>手动全量检查</Button>
-              <Button onClick={() => onNavigate('components')}>新增组件</Button>
-              <Button onClick={() => onNavigate('checks')}>查看检查记录</Button>
-            </Space>
           </div>
         )}
       />
@@ -374,17 +355,16 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
         </div>
       </div>
       <div className="dashboard-dual-grid">
-        <Card
-          className="dashboard-panel"
-          title={(
-            <div className="dashboard-panel-title">
-              <span>待处理更新</span>
-              <small>当前待处理 {pendingUpdates.length} 条</small>
-            </div>
-          )}
-          loading={dashboardLoading}
-          extra={<Button size="small" onClick={() => onNavigate('checks')}>查看全部</Button>}
-        >
+      <Card
+        className="dashboard-panel"
+        title={(
+          <div className="dashboard-panel-title">
+            <span>待处理更新</span>
+            <small>当前待处理 {pendingUpdates.length} 条</small>
+          </div>
+        )}
+        loading={dashboardLoading}
+      >
           {pendingUpdates.length === 0 ? (
             <DashboardEmptyState
               title="暂无待处理更新"
@@ -433,9 +413,8 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
           </div>
         )}
         loading={dashboardLoading}
-        extra={<Button size="small" onClick={() => onNavigate('checks')}>查看全部</Button>}
       >
-        <DashboardRunList runs={runs.slice(0, 5)} onOpenChecks={() => onNavigate('checks')} />
+        <DashboardRunList runs={runs.slice(0, 5)} />
       </Card>
       <div className="dashboard-bottom-grid">
         <Card
@@ -447,7 +426,6 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
             </div>
           )}
           loading={dashboardLoading}
-          extra={<Button size="small" onClick={() => onNavigate('notifications')}>查看全部</Button>}
         >
           {recentNotifications.length === 0 ? (
             <DashboardEmptyState
@@ -523,7 +501,7 @@ function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (p
   );
 }
 
-function DashboardRunList(props: { runs: SystemRun[]; onOpenChecks: () => void }) {
+function DashboardRunList(props: { runs: SystemRun[] }) {
   if (props.runs.length === 0) {
     return (
       <DashboardEmptyState
@@ -549,7 +527,6 @@ function DashboardRunList(props: { runs: SystemRun[]; onOpenChecks: () => void }
               {formatTime(run.started_at)} - {formatTime(run.finished_at)}
             </div>
           </div>
-          <Button size="small" onClick={props.onOpenChecks}>查看详情</Button>
         </div>
       ))}
     </div>
