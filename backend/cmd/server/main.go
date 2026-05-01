@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"opensource-release-watcher/backend/internal/api"
 	"opensource-release-watcher/backend/internal/checker"
@@ -17,7 +18,11 @@ import (
 
 func main() {
 	cfg := config.Load()
-	log.Printf("starting opensource-release-watcher server addr=%s db=%s check_interval=%s", cfg.ServerAddr, cfg.DBPath, cfg.CheckInterval)
+	if cwd, err := os.Getwd(); err == nil {
+		log.Printf("starting opensource-release-watcher server addr=%s db=%s check_interval=%s cwd=%s", cfg.ServerAddr, cfg.DBPath, cfg.CheckInterval, cwd)
+	} else {
+		log.Printf("starting opensource-release-watcher server addr=%s db=%s check_interval=%s cwd=unknown", cfg.ServerAddr, cfg.DBPath, cfg.CheckInterval)
+	}
 
 	store, err := storage.Open(cfg.DBPath)
 	if err != nil {

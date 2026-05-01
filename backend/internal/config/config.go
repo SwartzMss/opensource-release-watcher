@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -31,9 +32,13 @@ type AuthConfig struct {
 func Load() Config {
 	adminUsername := env("ADMIN_USERNAME", "admin")
 	adminPassword := env("ADMIN_PASSWORD", "admin")
+	dbPath := env("DB_PATH", "../data/watcher.db")
+	if abs, err := filepath.Abs(dbPath); err == nil {
+		dbPath = abs
+	}
 	return Config{
 		ServerAddr:    env("SERVER_ADDR", ":8080"),
-		DBPath:        env("DB_PATH", "../data/watcher.db"),
+		DBPath:        dbPath,
 		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
 		CheckInterval: durationEnv("CHECK_INTERVAL", 6*time.Hour),
 		Auth: AuthConfig{
