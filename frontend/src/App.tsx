@@ -265,7 +265,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
     },
     {
-      label: 'Mail',
+      label: '邮件功能',
       value: mailStatus
         ? (mailStatus.configured ? (mailStatus.connected ? '正常' : '异常') : '未配置')
         : '待检测',
