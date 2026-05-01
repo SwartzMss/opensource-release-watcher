@@ -359,6 +359,14 @@ a {
   overflow-wrap: anywhere;
 }
 
+.dashboard-health-row-label-soft {
+  color: #6f6a5f;
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .dashboard-health-row-emphasis strong {
   font-size: 18px;
   font-weight: 700;

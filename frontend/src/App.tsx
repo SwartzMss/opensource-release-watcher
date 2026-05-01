@@ -351,7 +351,11 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
             {healthRows.map(item => (
               <div key={item.label} className={`dashboard-health-row${item.tone === 'emphasis' ? ' dashboard-health-row-emphasis' : ''}`}>
                 <div>
-                  <strong>{item.label}</strong>
+                  {item.tone === 'emphasis' ? (
+                    <span className="dashboard-health-row-label-soft">{item.label}</span>
+                  ) : (
+                    <strong>{item.label}</strong>
+                  )}
                   {item.extra ? <span>{item.extra}</span> : null}
                 </div>
                 <Tag color={dashboardTagColor(item.value)}>
