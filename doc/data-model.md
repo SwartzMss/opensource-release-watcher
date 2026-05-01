@@ -11,7 +11,7 @@
 - 每个订阅人可以选择全部组件或指定组件集合。
 - 每次检查都生成检查记录。
 - 每次邮件发送都生成通知记录。
-- 通过唯一约束避免同一组件同一版本重复通知。
+- 通过唯一约束避免同一组件同一版本对同一收件人重复通知。
 
 ## 2. 表结构
 
@@ -26,7 +26,7 @@
 | repo_url | TEXT | 是 | GitHub 仓库完整地址 |
 | current_version | TEXT | 是 | 当前内部使用版本 |
 | latest_version | TEXT | 否 | 最近检查到的上游版本 |
-| last_seen_version | TEXT | 否 | 最近已处理版本，用于去重 |
+| last_seen_version | TEXT | 否 | 最近已处理版本，用于组件级状态展示 |
 | check_strategy | TEXT | 是 | 检查策略，`release_first` 或 `tag_only` |
 | enabled | INTEGER | 是 | 是否启用，1 是，0 否 |
 | last_check_status | TEXT | 否 | 最近检查状态，`success`、`failed`、`skipped` |
@@ -86,11 +86,14 @@ UNIQUE(email)
 ### 2.4 global_subscriber_components
 
 保存订阅人与组件的多对多映射。
+同时记录该订阅人对该组件最近一次成功通知到的版本，用于按订阅人推进版本进度。
+这张表既是订阅关系表，也是订阅人版本进度表。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | subscriber_id | INTEGER | 是 | 订阅人 ID |
 | component_id | INTEGER | 是 | 组件 ID |
+| last_notified_version | TEXT | 是 | 该订阅人对该组件最近一次成功通知到的版本 |
 | created_at | DATETIME | 是 | 关联时间 |
 
 建议约束：
@@ -232,6 +235,7 @@ CREATE TABLE global_subscribers (
 CREATE TABLE global_subscriber_components (
   subscriber_id INTEGER NOT NULL,
   component_id INTEGER NOT NULL,
+  last_notified_version TEXT NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL,
   PRIMARY KEY (subscriber_id, component_id),
   FOREIGN KEY(subscriber_id) REFERENCES global_subscribers(id),

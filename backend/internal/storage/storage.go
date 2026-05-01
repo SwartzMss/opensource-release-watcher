@@ -71,6 +71,25 @@ func (s *Store) migrateSubscriberSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	hasProgressColumn, err := s.hasColumn(ctx, "global_subscriber_components", "last_notified_version")
+	if err != nil {
+		return err
+	}
+	if !hasProgressColumn {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE global_subscriber_components ADD COLUMN last_notified_version TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE global_subscriber_components
+			SET last_notified_version = COALESCE(
+				(SELECT NULLIF(c.last_seen_version, '') FROM components c WHERE c.id = global_subscriber_components.component_id),
+				(SELECT NULLIF(c.current_version, '') FROM components c WHERE c.id = global_subscriber_components.component_id),
+				''
+			)
+			WHERE last_notified_version = ''`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -549,19 +568,57 @@ func (s *Store) replaceGlobalSubscriberComponents(ctx context.Context, subscribe
 		boolInt(allComponents), now, subscriberID); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM global_subscriber_components WHERE subscriber_id = ?`, subscriberID); err != nil {
-		return err
-	}
 	if allComponents {
 		return nil
 	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT component_id, last_notified_version
+		FROM global_subscriber_components
+		WHERE subscriber_id = ?`, subscriberID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	existing := map[int64]string{}
+	for rows.Next() {
+		var componentID int64
+		var version string
+		if err := rows.Scan(&componentID, &version); err != nil {
+			return err
+		}
+		existing[componentID] = version
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	selected := map[int64]struct{}{}
 	for _, componentID := range componentIDs {
 		if componentID <= 0 {
 			continue
 		}
+		selected[componentID] = struct{}{}
+		if _, ok := existing[componentID]; ok {
+			continue
+		}
+		var currentVersion string
+		if err := s.db.QueryRowContext(ctx, `SELECT current_version FROM components WHERE id = ?`, componentID).Scan(&currentVersion); err != nil {
+			return err
+		}
 		if _, err := s.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO global_subscriber_components (subscriber_id, component_id, created_at)
-			VALUES (?, ?, ?)`, subscriberID, componentID, now); err != nil {
+			INSERT INTO global_subscriber_components (
+				subscriber_id, component_id, last_notified_version, created_at
+			) VALUES (?, ?, ?, ?)
+			ON CONFLICT(subscriber_id, component_id) DO UPDATE SET
+				last_notified_version = excluded.last_notified_version`,
+			subscriberID, componentID, currentVersion, now); err != nil {
+			return err
+		}
+	}
+	for componentID := range existing {
+		if _, ok := selected[componentID]; ok {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM global_subscriber_components WHERE subscriber_id = ? AND component_id = ?`, subscriberID, componentID); err != nil {
 			return err
 		}
 	}
@@ -668,12 +725,57 @@ func (s *Store) CreateNotificationRecord(ctx context.Context, record *Notificati
 	return err
 }
 
-func (s *Store) HasSentNotification(ctx context.Context, componentID int64, version string) (bool, error) {
+func (s *Store) HasSentNotification(ctx context.Context, componentID int64, version, recipientEmail string) (bool, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM notification_records
-		WHERE component_id = ? AND version = ? AND status = 'sent'`, componentID, version).Scan(&count)
+		WHERE component_id = ? AND version = ? AND recipient_email = ? AND status = 'sent'`,
+		componentID, version, recipientEmail).Scan(&count)
 	return count > 0, err
+}
+
+type SubscriberNotificationTarget struct {
+	SubscriberID        int64
+	Email               string
+	LastNotifiedVersion string
+}
+
+func (s *Store) ListSubscriberNotificationTargets(ctx context.Context, componentID int64) ([]SubscriberNotificationTarget, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT g.id, g.email, COALESCE(gsc.last_notified_version, '')
+		FROM global_subscribers g
+		LEFT JOIN global_subscriber_components gsc
+			ON gsc.subscriber_id = g.id AND gsc.component_id = ?
+		WHERE g.enabled = 1
+		  AND (
+			g.all_components = 1
+			OR gsc.component_id IS NOT NULL
+		  )
+		ORDER BY g.email ASC`, componentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SubscriberNotificationTarget{}
+	for rows.Next() {
+		var item SubscriberNotificationTarget
+		if err := rows.Scan(&item.SubscriberID, &item.Email, &item.LastNotifiedVersion); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) UpsertSubscriberComponentProgress(ctx context.Context, subscriberID, componentID int64, version string) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO global_subscriber_components (subscriber_id, component_id, last_notified_version, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(subscriber_id, component_id) DO UPDATE SET
+			last_notified_version = excluded.last_notified_version`,
+		subscriberID, componentID, version, time.Now().UTC(),
+	)
+	return err
 }
 
 func (s *Store) ListNotificationRecords(ctx context.Context, opts ListOptions) ([]NotificationRecord, int, error) {

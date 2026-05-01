@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +12,7 @@ import (
 	"opensource-release-watcher/backend/internal/github"
 	"opensource-release-watcher/backend/internal/notifier"
 	"opensource-release-watcher/backend/internal/storage"
+	"opensource-release-watcher/backend/internal/version"
 )
 
 type Service struct {
@@ -114,7 +115,7 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 	if err := s.store.UpdateComponentCheckState(ctx, *component, record); err != nil {
 		return nil, err
 	}
-	if record.Status == "success" && record.HasUpdate {
+	if record.Status == "success" && record.LatestVersion != "" {
 		if err := s.notifyUpdate(ctx, *component, record); err != nil {
 			record.ErrorMessage = err.Error()
 		}
@@ -151,7 +152,7 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 		}
 		if record.Status == "success" {
 			run.SuccessCount++
-			if record.HasUpdate {
+			if record.LatestVersion != "" {
 				_ = s.notifyUpdate(ctx, component, record)
 			}
 			continue
@@ -231,57 +232,93 @@ func (s *Service) DashboardSummary(ctx context.Context) (*storage.DashboardSumma
 }
 
 func (s *Service) notifyUpdate(ctx context.Context, component storage.Component, record storage.CheckRecord) error {
-	sent, err := s.store.HasSentNotification(ctx, component.ID, record.LatestVersion)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	if sent {
-		return nil
-	}
-	recipients, err := s.store.ListSubscriberRecipients(ctx, component.ID)
+	targets, err := s.store.ListSubscriberNotificationTargets(ctx, component.ID)
 	if err != nil {
 		return err
 	}
-	if len(recipients) == 0 {
+	if len(targets) == 0 {
 		return nil
 	}
-	log.Printf("notify update started component_id=%d name=%s version=%s recipients=%d", component.ID, component.Name, record.LatestVersion, len(recipients))
-	subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, record.PreviousVersion, record.LatestVersion)
-	body := buildMailBody(component, record)
-	sendErr := s.notifier.Send(notifier.Message{
-		To:      recipients,
-		Subject: subject,
-		Body:    body,
-	})
-	status := "sent"
-	errorMessage := ""
-	var sentAt *time.Time
-	if sendErr != nil {
-		status = "failed"
-		errorMessage = sendErr.Error()
-	} else {
-		now := time.Now().UTC()
-		sentAt = &now
-	}
-	for _, recipient := range recipients {
-		_ = s.store.CreateNotificationRecord(ctx, &storage.NotificationRecord{
+	var errs []error
+	sentCount := 0
+	skippedCount := 0
+	for _, target := range targets {
+		baseline := target.LastNotifiedVersion
+		if baseline == "" {
+			baseline = component.CurrentVersion
+		}
+		subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, baseline, record.LatestVersion)
+		body := buildMailBody(component, record)
+		if !version.IsNewer(record.LatestVersion, baseline) {
+			skippedCount++
+			continue
+		}
+		sent, err := s.store.HasSentNotification(ctx, component.ID, record.LatestVersion, target.Email)
+		if err != nil {
+			errs = append(errs, err)
+			log.Printf("notify update failed component_id=%d name=%s version=%s recipient=%s err=%v", component.ID, component.Name, record.LatestVersion, target.Email, err)
+			continue
+		}
+		if sent {
+			if err := s.store.UpsertSubscriberComponentProgress(ctx, target.SubscriberID, component.ID, record.LatestVersion); err != nil {
+				errs = append(errs, err)
+				log.Printf("notify update progress sync failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
+				continue
+			}
+			skippedCount++
+			continue
+		}
+		log.Printf("notify update started component_id=%d name=%s version=%s recipient=%s", component.ID, component.Name, record.LatestVersion, target.Email)
+		sendErr := s.notifier.Send(notifier.Message{
+			To:      []string{target.Email},
+			Subject: subject,
+			Body:    body,
+		})
+		status := "sent"
+		errorMessage := ""
+		var sentAt *time.Time
+		if sendErr != nil {
+			status = "failed"
+			errorMessage = sendErr.Error()
+			errs = append(errs, sendErr)
+		} else {
+			now := time.Now().UTC()
+			sentAt = &now
+			sentCount++
+		}
+		if err := s.store.CreateNotificationRecord(ctx, &storage.NotificationRecord{
 			ComponentID:    component.ID,
 			CheckRecordID:  record.ID,
 			Version:        record.LatestVersion,
-			RecipientEmail: recipient,
+			RecipientEmail: target.Email,
 			Subject:        subject,
 			Body:           body,
 			Status:         status,
 			ErrorMessage:   errorMessage,
 			SentAt:         sentAt,
-		})
+		}); err != nil {
+			errs = append(errs, err)
+			log.Printf("notify update record write failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
+		}
+		if sendErr == nil {
+			if err := s.store.UpsertSubscriberComponentProgress(ctx, target.SubscriberID, component.ID, record.LatestVersion); err != nil {
+				errs = append(errs, err)
+				log.Printf("notify update progress update failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
+			}
+		}
+		if sendErr != nil {
+			log.Printf("notify update failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, sendErr)
+		} else {
+			log.Printf("notify update finished component_id=%d version=%s recipient=%s", component.ID, record.LatestVersion, target.Email)
+		}
 	}
-	if sendErr != nil {
-		log.Printf("notify update failed component_id=%d version=%s err=%v", component.ID, record.LatestVersion, sendErr)
-	} else {
-		log.Printf("notify update finished component_id=%d version=%s recipients=%d", component.ID, record.LatestVersion, len(recipients))
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
-	return sendErr
+	if sentCount == 0 && skippedCount > 0 {
+		return nil
+	}
+	return nil
 }
 
 func buildMailBody(component storage.Component, record storage.CheckRecord) string {

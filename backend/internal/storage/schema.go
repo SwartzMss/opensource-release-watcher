@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS global_subscribers (
 CREATE TABLE IF NOT EXISTS global_subscriber_components (
   subscriber_id INTEGER NOT NULL,
   component_id INTEGER NOT NULL,
+  last_notified_version TEXT NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL,
   PRIMARY KEY (subscriber_id, component_id),
   FOREIGN KEY(subscriber_id) REFERENCES global_subscribers(id) ON DELETE CASCADE,
