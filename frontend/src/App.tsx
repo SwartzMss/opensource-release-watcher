@@ -216,20 +216,26 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
 function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
+  const [checkRecords, setCheckRecords] = useState<CheckRecord[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextMailStatus] = await Promise.all([
+      const [nextSummary, nextRuns, nextMailStatus, nextCheckRecords, nextNotifications] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
         api.mailStatus(),
+        api.checkRecords({ page_size: 8, has_update: true }),
+        api.notifications({ page_size: 8 }),
       ]);
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setMailStatus(nextMailStatus);
+      setCheckRecords(nextCheckRecords.items);
+      setNotifications(nextNotifications.items);
     } catch (error) {
       message.error(String(error));
     } finally {
@@ -242,21 +248,24 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   }, []);
 
   const latestRun = runs[0];
+  const recentUpdates = checkRecords.slice(0, 5);
+  const recentNotificationRecords = notifications.slice(0, 5);
   const dashboardLoading = loading && !summary;
   const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
   const successRate = latestRun && latestRun.total_count > 0 ? latestRun.success_count / latestRun.total_count : null;
   const metricCards = [
+    { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
+    { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
+    { label: '最近发现更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
-    { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
-    { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string }> = [
     {
-      label: 'Scheduler',
+      label: '调度状态',
       value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
-      extra: latestRun ? `最近检查 ${formatTime(latestCheckAt)}` : '尚未执行过检查',
+      extra: latestRun ? `最近检查 ${formatClock(latestCheckAt)}` : '尚未执行过检查',
     },
     {
       label: 'Mail',
@@ -267,10 +276,60 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
     },
     {
       label: '最近检查',
-      value: formatTime(latestCheckAt),
-      extra: latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录',
+      value: formatClock(latestCheckAt),
+      extra: latestRun ? `检查结果 ${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录',
     },
   ];
+
+  const alertRows: Array<{ label: string; value: string }> = [];
+  if ((summary?.last_check_failed_total ?? 0) > 0) {
+    alertRows.push({
+      label: '检查异常',
+      value: `${summary?.last_check_failed_total ?? 0} 条`,
+    });
+  }
+  if ((summary?.notification_failed_total ?? 0) > 0) {
+    alertRows.push({
+      label: '通知异常',
+      value: `${summary?.notification_failed_total ?? 0} 条`,
+    });
+  }
+
+  const notificationByCheckRecordId = new Map<number, NotificationRecord[]>();
+  notifications.forEach(item => {
+    const bucket = notificationByCheckRecordId.get(item.check_record_id);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      notificationByCheckRecordId.set(item.check_record_id, [item]);
+    }
+  });
+
+  const recentUpdateRows = recentUpdates.map(item => {
+    const relatedNotifications = notificationByCheckRecordId.get(item.id) ?? [];
+    const notificationMeta = relatedNotifications.some(notification => notification.status === 'sent')
+      ? { label: '已通知', tone: 'success' as const }
+      : relatedNotifications.some(notification => notification.status === 'failed')
+        ? { label: '通知失败', tone: 'danger' as const }
+        : { label: '待通知', tone: 'warning' as const };
+    return {
+      id: item.id,
+      title: item.component_name,
+      subtitle: `${item.previous_version || '-'} → ${item.latest_version || '-'}`,
+      detail: `检查于 ${formatClock(item.checked_at)}`,
+      meta: notificationMeta,
+    };
+  });
+
+  const recentNotificationRows = recentNotificationRecords.map(item => ({
+    id: item.id,
+    title: item.component_name,
+    subtitle: `${item.version || '-'} · ${item.recipient_email}`,
+    detail: `${item.status === 'sent' ? '通知成功' : '通知失败'} · ${formatClock(item.sent_at ?? item.created_at)}`,
+    meta: item.status === 'sent'
+      ? { label: '通知成功', tone: 'success' as const }
+      : { label: '通知失败', tone: 'danger' as const },
+  }));
 
   const statusPill = latestRun
     ? latestRun.status === 'failed'
@@ -291,7 +350,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
               <Tag color={latestRun?.status === 'failed' ? 'red' : latestRun?.status === 'running' ? 'blue' : 'green'}>
                 {statusPill}
               </Tag>
-              <span>最近检查：{formatTime(latestCheckAt)}</span>
+              <span>最近检查：{formatClock(latestCheckAt)}</span>
             </div>
           </div>
         )}
@@ -304,47 +363,134 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           </Card>
         ))}
       </div>
+      <div className="dashboard-split-grid">
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>系统概览</span>
+              <small>状态与运行情况</small>
+            </div>
+          )}
+          loading={dashboardLoading}
+        >
+          <div className="dashboard-health-list">
+            {healthRows.map(item => (
+              <div key={item.label} className="dashboard-health-row">
+                <div>
+                  <strong>{item.label}</strong>
+                  {item.extra ? <span>{item.extra}</span> : null}
+                </div>
+                <Tag color={dashboardTagColor(item.value)}>
+                  {item.value}
+                </Tag>
+              </div>
+            ))}
+          </div>
+          <div className="dashboard-trend-list dashboard-health-metrics">
+            <div className="dashboard-trend-row">
+              <div className="dashboard-trend-row-head">
+                <span>检查结果</span>
+                <strong>{latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '-'}</strong>
+              </div>
+              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((successRate ?? 0) * 100)}%` }} /></div>
+              <small>{latestRun ? `最近一次运行 ${formatPercent(successRate)}` : '暂无运行记录'}</small>
+            </div>
+          </div>
+        </Card>
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>异常提醒</span>
+              <small>需要关注的系统问题</small>
+            </div>
+          )}
+          loading={dashboardLoading}
+        >
+          {alertRows.length === 0 ? (
+            <DashboardEmptyState
+              title="暂无异常"
+              description="最近一次检查和通知没有发现需要处理的问题。"
+            />
+          ) : (
+            <div className="dashboard-alert-list">
+              {alertRows.map(item => (
+                <div key={item.label} className="dashboard-alert-row">
+                  <div>
+                    <strong>{item.label}</strong>
+                    <span>最近一次检查结果</span>
+                  </div>
+                  <Tag color="red">{item.value}</Tag>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
       <Card
         className="dashboard-panel"
         title={(
           <div className="dashboard-panel-title">
-            <span>系统健康</span>
-            <small>状态与运行指标</small>
+            <span>最近发现更新</span>
+            <small>{recentUpdateRows.length} 条</small>
           </div>
         )}
         loading={dashboardLoading}
       >
-        <div className="dashboard-health-list">
-          {healthRows.map(item => (
-            <div key={item.label} className="dashboard-health-row">
-              <div>
-                <strong>{item.label}</strong>
-                {item.extra ? <span>{item.extra}</span> : null}
+        {recentUpdateRows.length === 0 ? (
+          <DashboardEmptyState
+            title="暂无发现更新"
+            description="当上游出现新版本并完成检查后，这里会展示最近发现的更新。"
+          />
+        ) : (
+          <div className="dashboard-compact-list">
+            {recentUpdateRows.map(item => (
+              <div key={item.id} className="dashboard-compact-item">
+                <div className="dashboard-compact-item-head">
+                  <div>
+                    <strong>{item.title}</strong>
+                    <span>{item.subtitle}</span>
+                  </div>
+                  <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
+                </div>
+                <div className="dashboard-compact-item-meta">{item.detail}</div>
               </div>
-              <Tag color={dashboardTagColor(item.value)}>
-                {item.value}
-              </Tag>
-            </div>
-          ))}
-        </div>
-        <div className="dashboard-trend-list dashboard-health-metrics">
-          <div className="dashboard-trend-row">
-            <div className="dashboard-trend-row-head">
-              <span>检查成功率</span>
-              <strong>{formatPercent(successRate)}</strong>
-            </div>
-            <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((successRate ?? 0) * 100)}%` }} /></div>
-            <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count}` : '暂无运行记录'}</small>
+            ))}
           </div>
-          <div className="dashboard-trend-row">
-            <div className="dashboard-trend-row-head">
-              <span>最近检查</span>
-              <strong>{formatTime(latestCheckAt)}</strong>
-            </div>
-            <div className="dashboard-trend-bar"><span style={{ width: latestCheckAt ? '100%' : '0%' }} /></div>
-            <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录'}</small>
+        )}
+      </Card>
+      <Card
+        className="dashboard-panel"
+        title={(
+          <div className="dashboard-panel-title">
+            <span>最近通知记录</span>
+            <small>{recentNotificationRows.length} 条</small>
           </div>
-        </div>
+        )}
+        loading={dashboardLoading}
+      >
+        {recentNotificationRows.length === 0 ? (
+          <DashboardEmptyState
+            title="暂无通知记录"
+            description="当发现新版本并发送通知后，这里会展示最近通知结果。"
+          />
+        ) : (
+          <div className="dashboard-compact-list">
+            {recentNotificationRows.map(item => (
+              <div key={item.id} className="dashboard-compact-item">
+                <div className="dashboard-compact-item-head">
+                  <div>
+                    <strong>{item.title}</strong>
+                    <span>{item.subtitle}</span>
+                  </div>
+                  <Tag color={dashboardCompactTagColor(item.meta.tone)}>{item.meta.label}</Tag>
+                </div>
+                <div className="dashboard-compact-item-meta">{item.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </section>
   );
@@ -364,6 +510,15 @@ function formatDuration(seconds?: number | null) {
 function formatInterval(seconds?: number) {
   if (!seconds || seconds <= 0) return '-';
   return formatDuration(seconds);
+}
+
+function DashboardEmptyState(props: { title: string; description: string }) {
+  return (
+    <div className="dashboard-empty">
+      <strong>{props.title}</strong>
+      <span>{props.description}</span>
+    </div>
+  );
 }
 
 function Components({ isMobile }: { isMobile: boolean }) {
@@ -1509,6 +1664,12 @@ function dashboardTagColor(value: string) {
   if (value === '异常' || value === '失败' || value === 'degraded' || value === 'failed') return 'red';
   if (value === '运行中' || value === '待运行' || value === '待检测' || value === 'warning' || value === 'running') return 'blue';
   return undefined;
+}
+
+function dashboardCompactTagColor(tone: 'success' | 'warning' | 'danger') {
+  if (tone === 'success') return 'green';
+  if (tone === 'warning') return 'orange';
+  return 'red';
 }
 
 function emptyComponent(): ComponentItem {

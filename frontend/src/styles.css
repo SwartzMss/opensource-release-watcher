@@ -228,7 +228,14 @@ a {
 }
 
 .dashboard-metric-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.dashboard-split-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  margin-bottom: 16px;
 }
 
 .metric small {
@@ -425,6 +432,84 @@ a {
   display: block;
   height: 100%;
   min-width: 8px;
+}
+
+.dashboard-alert-list,
+.dashboard-compact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-alert-row,
+.dashboard-compact-item {
+  background: rgba(32, 35, 31, 0.04);
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.dashboard-alert-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.dashboard-alert-row strong,
+.dashboard-compact-item strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.dashboard-alert-row span,
+.dashboard-compact-item span {
+  color: #6f6a5f;
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-compact-item-head {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-compact-item-meta {
+  color: #7d786c;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-empty {
+  align-items: center;
+  background: rgba(32, 35, 31, 0.04);
+  border-radius: 14px;
+  color: #6f6a5f;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-height: 88px;
+  padding: 16px;
+  text-align: center;
+}
+
+.dashboard-empty strong {
+  color: #23211d;
+  display: block;
+  font-size: 14px;
+}
+
+.dashboard-empty span {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .toolbar-card .ant-space {
@@ -888,9 +973,14 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-split-grid {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-health-row,
   .dashboard-trend-row,
-  .dashboard-record-item {
+  .dashboard-alert-row,
+  .dashboard-compact-item {
     padding: 11px 12px;
   }
 }
