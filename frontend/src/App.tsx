@@ -254,7 +254,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const metricCards = [
     { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
     { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
-    { label: '最近发现更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const },
+    { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
   ];
