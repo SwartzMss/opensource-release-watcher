@@ -58,7 +58,10 @@ export interface DashboardSummary {
   components_with_update: number;
   last_check_failed_total: number;
   notification_failed_total: number;
+  last_run_duration_seconds: number;
+  check_interval_seconds: number;
   last_full_check_at?: string;
+  next_check_at?: string;
 }
 
 export interface CheckRecord {

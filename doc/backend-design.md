@@ -129,7 +129,10 @@ backend/
   "components_with_update": 5,
   "last_check_failed_total": 2,
   "notification_failed_total": 1,
-  "last_full_check_at": "2026-04-28T10:00:00Z"
+  "last_run_duration_seconds": 3,
+  "check_interval_seconds": 21600,
+  "last_full_check_at": "2026-04-28T10:00:00Z",
+  "next_check_at": "2026-04-28T16:00:00Z"
 }
 ```
 

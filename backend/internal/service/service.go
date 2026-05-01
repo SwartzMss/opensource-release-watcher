@@ -14,15 +14,16 @@ import (
 )
 
 type Service struct {
-	store    *storage.Store
-	checker  *checker.Checker
-	notifier notifier.Notifier
-	mailAuth notifier.StatusProvider
+	store         *storage.Store
+	checker       *checker.Checker
+	notifier      notifier.Notifier
+	mailAuth      notifier.StatusProvider
+	checkInterval time.Duration
 }
 
-func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifier) *Service {
+func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifier, checkInterval time.Duration) *Service {
 	mailAuth, _ := mailer.(notifier.StatusProvider)
-	return &Service{store: store, checker: checker, notifier: mailer, mailAuth: mailAuth}
+	return &Service{store: store, checker: checker, notifier: mailer, mailAuth: mailAuth, checkInterval: checkInterval}
 }
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
@@ -198,7 +199,18 @@ func (s *Service) ListSystemRuns(ctx context.Context, opts storage.ListOptions) 
 }
 
 func (s *Service) DashboardSummary(ctx context.Context) (*storage.DashboardSummary, error) {
-	return s.store.DashboardSummary(ctx)
+	summary, err := s.store.DashboardSummary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.checkInterval > 0 {
+		summary.CheckIntervalSeconds = int(s.checkInterval.Seconds())
+		if summary.LastFullCheckAt != nil {
+			nextCheckAt := summary.LastFullCheckAt.Add(s.checkInterval)
+			summary.NextCheckAt = &nextCheckAt
+		}
+	}
+	return summary, nil
 }
 
 func (s *Service) notifyUpdate(ctx context.Context, component storage.Component, record storage.CheckRecord) error {

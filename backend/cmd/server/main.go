@@ -27,7 +27,7 @@ func main() {
 	githubClient := github.NewClient(cfg.GitHubToken)
 	mailNotifier := notifier.NewGraphDelegatedMail(cfg.GraphMail)
 	releaseChecker := checker.New(githubClient)
-	watcherService := service.New(store, releaseChecker, mailNotifier)
+	watcherService := service.New(store, releaseChecker, mailNotifier, cfg.CheckInterval)
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
 	router := api.NewRouter(watcherService, cfg.Auth)

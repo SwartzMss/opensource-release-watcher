@@ -91,7 +91,10 @@ type DashboardSummary struct {
 	ComponentsWithUpdate    int        `json:"components_with_update"`
 	LastCheckFailedTotal    int        `json:"last_check_failed_total"`
 	NotificationFailedTotal int        `json:"notification_failed_total"`
+	LastRunDurationSeconds  int        `json:"last_run_duration_seconds"`
+	CheckIntervalSeconds    int        `json:"check_interval_seconds"`
 	LastFullCheckAt         *time.Time `json:"last_full_check_at,omitempty"`
+	NextCheckAt             *time.Time `json:"next_check_at,omitempty"`
 }
 
 type ListOptions struct {

@@ -84,7 +84,7 @@ export function App() {
 
   const pageContent = (
     <>
-      {page === 'dashboard' && <Dashboard isMobile={isMobile} />}
+      {page === 'dashboard' && <Dashboard isMobile={isMobile} onNavigate={setPage} />}
       {page === 'components' && <Components isMobile={isMobile} />}
       {page === 'subscribers' && <Subscribers isMobile={isMobile} />}
       {page === 'checks' && <Checks isMobile={isMobile} />}
@@ -213,33 +213,50 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   );
 }
 
-function Dashboard({ isMobile }: { isMobile: boolean }) {
+function Dashboard({ isMobile, onNavigate }: { isMobile: boolean; onNavigate: (page: PageKey) => void }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
   const [updates, setUpdates] = useState<CheckRecord[]>([]);
+  const [sentNotifications, setSentNotifications] = useState<NotificationRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
+  const [runningCheck, setRunningCheck] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextUpdates, nextNotifications, nextMailStatus] = await Promise.all([
+      const [nextSummary, nextRuns, nextUpdates, nextSentNotifications, nextNotifications, nextMailStatus] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
-        api.checkRecords({ has_update: true, status: 'success', page_size: 20 }),
+        api.checkRecords({ has_update: true, status: 'success', page_size: 100 }),
+        api.notifications({ status: 'sent', page_size: 100 }),
         api.notifications({ page_size: 10 }),
         api.mailStatus(),
       ]);
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setUpdates(nextUpdates.items);
+      setSentNotifications(nextSentNotifications.items);
       setNotifications(nextNotifications.items);
       setMailStatus(nextMailStatus);
     } catch (error) {
       message.error(String(error));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runChecks() {
+    setRunningCheck(true);
+    try {
+      await api.runChecks();
+      message.success('全量检查已开始');
+      await load();
+    } catch (error) {
+      message.error(String(error));
+    } finally {
+      setRunningCheck(false);
     }
   }
 
@@ -253,40 +270,61 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const latestRunUpdates = latestRun
     ? updates.filter(item => new Date(item.checked_at).getTime() >= new Date(latestRun.started_at).getTime())
     : updates;
+  const sentVersionSet = new Set(sentNotifications.map(item => `${item.component_id}:${item.version}`));
+  const pendingUpdates = latestRunUpdates.filter(item => !sentVersionSet.has(`${item.component_id}:${item.latest_version}`));
+  const completedUpdates = latestRunUpdates.length - pendingUpdates.length;
   const recentNotifications = notifications.slice(0, 6);
   const notificationSuccessCount = notifications.filter(item => item.status === 'sent').length;
   const successRate = latestRun && latestRun.total_count > 0 ? latestRun.success_count / latestRun.total_count : null;
   const notificationSuccessRate = notifications.length > 0 ? notificationSuccessCount / notifications.length : null;
-  const updateHitRate = latestRun && latestRun.total_count > 0 ? latestRunUpdates.length / latestRun.total_count : null;
+  const pendingRate = latestRun && latestRun.total_count > 0 ? pendingUpdates.length / latestRun.total_count : null;
 
-  const cards = [
-    ['组件总数', summary?.component_total ?? 0],
-    ['启用监控', summary?.enabled_component_total ?? 0],
-    ['发现更新', summary?.components_with_update ?? 0],
-    ['待评估', latestRunUpdates.length],
-    ['检查异常', summary?.last_check_failed_total ?? 0],
-    ['通知异常', summary?.notification_failed_total ?? 0],
+  const metricCards = [
+    { label: '待处理更新', value: pendingUpdates.length, tone: 'warning' as const },
+    { label: '发现更新', value: latestRunUpdates.length, tone: 'warning' as const },
+    { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
+    { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
+    { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
+    { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string }> = [
     {
       label: 'Scheduler',
-      value: latestRun ? latestRun.status : 'unknown',
+      value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
+      extra: latestRun ? `最近检查 ${formatTime(latestCheckAt)}` : '尚未执行过检查',
     },
     {
       label: 'GitHub API',
-      value: latestRun
-        ? (latestRun.failed_count === 0 ? 'normal' : 'degraded')
-        : 'unknown',
+      value: !latestRun ? '待检测' : latestRun.failed_count === 0 ? '正常' : '异常',
+      extra: latestRun ? `${latestRun.success_count}/${latestRun.total_count} 成功` : '暂无运行记录',
     },
     {
       label: 'Mail',
       value: mailStatus
-        ? (mailStatus.configured ? (mailStatus.connected ? 'normal' : 'failed') : 'not configured')
-        : 'unknown',
+        ? (mailStatus.configured ? (mailStatus.connected ? '正常' : '异常') : '未配置')
+        : '待检测',
       extra: mailStatus?.message ?? '',
     },
-  ] as const;
+    {
+      label: '最近检查',
+      value: formatTime(latestCheckAt),
+      extra: summary?.last_run_duration_seconds ? `耗时 ${formatDuration(summary.last_run_duration_seconds)}` : '暂无运行耗时',
+    },
+    {
+      label: '下次检查',
+      value: summary?.next_check_at ? formatTime(summary.next_check_at) : (summary?.check_interval_seconds ? `每 ${formatInterval(summary.check_interval_seconds)}` : '未配置'),
+      extra: summary?.check_interval_seconds ? `周期 ${formatInterval(summary.check_interval_seconds)}` : '未配置周期',
+    },
+  ];
+
+  const statusPill = latestRun
+    ? latestRun.status === 'failed'
+      ? '最近失败'
+      : latestRun.status === 'running'
+        ? '运行中'
+        : '调度正常'
+    : '待运行';
 
   return (
     <section className="dashboard-page">
@@ -294,37 +332,83 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         title="仪表盘"
         description="查看开源组件监控整体状态。"
         action={(
-          <div className="dashboard-header-meta">
-            <div className="dashboard-header-meta-line">
-              <span className="dashboard-header-meta-label">最近检查</span>
-              <strong>{formatClock(latestCheckAt)}</strong>
-            </div>
-            <div className="dashboard-header-meta-line">
-              <span className="dashboard-header-meta-label">运行状态</span>
-              <Tag color={latestRun?.status === 'failed' ? 'red' : latestRun?.status === 'success' ? 'green' : 'blue'}>
-                {latestRun ? latestRun.status : 'unknown'}
+          <div className="dashboard-header-actions">
+            <div className="dashboard-status-strip">
+              <Tag color={latestRun?.status === 'failed' ? 'red' : latestRun?.status === 'running' ? 'blue' : 'green'}>
+                {statusPill}
               </Tag>
+              <span>最近检查：{formatTime(latestCheckAt)}</span>
             </div>
+            <Space wrap>
+              <Button type="primary" loading={runningCheck} onClick={() => void runChecks()}>手动全量检查</Button>
+              <Button onClick={() => onNavigate('components')}>新增组件</Button>
+              <Button onClick={() => onNavigate('checks')}>查看检查记录</Button>
+            </Space>
           </div>
         )}
       />
       <div className="metric-grid dashboard-metric-grid">
-        {cards.map(([label, value]) => (
-          <Card key={label} className="metric" loading={dashboardLoading}>
-            <small>{label}</small>
-            <strong>{value}</strong>
+        {metricCards.map(card => (
+          <Card key={card.label} className={`metric dashboard-metric dashboard-metric-${card.tone}`} loading={dashboardLoading}>
+            <small>{card.label}</small>
+            <strong>{card.value}</strong>
           </Card>
         ))}
       </div>
+      <div className="dashboard-summary-row">
+        <div className="dashboard-summary-chip">
+          <span>待评估</span>
+          <strong>{pendingUpdates.length}</strong>
+        </div>
+        <div className="dashboard-summary-chip">
+          <span>待通知</span>
+          <strong>{pendingUpdates.length}</strong>
+        </div>
+        <div className="dashboard-summary-chip">
+          <span>已完成</span>
+          <strong>{completedUpdates}</strong>
+        </div>
+        <div className="dashboard-summary-chip">
+          <span>已忽略</span>
+          <strong>0</strong>
+        </div>
+      </div>
       <div className="dashboard-dual-grid">
-        <Card className="dashboard-panel" title="待处理更新" loading={dashboardLoading}>
-          {isMobile ? (
-            <DashboardUpdateList updates={latestRunUpdates} compact />
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>待处理更新</span>
+              <small>当前待处理 {pendingUpdates.length} 条</small>
+            </div>
+          )}
+          loading={dashboardLoading}
+          extra={<Button size="small" onClick={() => onNavigate('checks')}>查看全部</Button>}
+        >
+          {pendingUpdates.length === 0 ? (
+            <DashboardEmptyState
+              title="暂无待处理更新"
+              description={latestRun
+                ? `最近一次检查 ${latestRun.success_count}/${latestRun.total_count} 成功，全部已完成或暂无新增更新。`
+                : '系统还没有执行过检查。'}
+              footer={latestCheckAt ? `最近检查：${formatTime(latestCheckAt)}` : undefined}
+            />
+          ) : isMobile ? (
+            <DashboardUpdateList updates={pendingUpdates} compact />
           ) : (
-            <DashboardUpdateList updates={latestRunUpdates} />
+            <DashboardUpdateList updates={pendingUpdates} />
           )}
         </Card>
-        <Card className="dashboard-panel" title="系统健康" loading={dashboardLoading}>
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>系统健康</span>
+              <small>检查节奏与外部依赖</small>
+            </div>
+          )}
+          loading={dashboardLoading}
+        >
           <div className="dashboard-health-list">
             {healthRows.map(item => (
               <div key={item.label} className="dashboard-health-row">
@@ -340,100 +424,170 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
           </div>
         </Card>
       </div>
-      <Card className="dashboard-panel" title="最近检查记录" loading={dashboardLoading}>
-        {isMobile ? (
-          <MobileRunList runs={runs} />
-        ) : (
-          <Table
-            rowKey="id"
-            size="middle"
-            pagination={false}
-            dataSource={runs}
-            scroll={{ x: 780 }}
-            columns={[
-              { title: '触发方式', dataIndex: 'trigger_type', render: value => value === 'scheduler' ? 'scheduler' : 'manual' },
-              { title: '状态', dataIndex: 'status', render: value => <StatusTag status={value} /> },
-              { title: '总数', dataIndex: 'total_count' },
-              { title: '成功', dataIndex: 'success_count' },
-              { title: '失败', dataIndex: 'failed_count' },
-              { title: '开始时间', dataIndex: 'started_at', render: formatTime },
-              { title: '结束时间', dataIndex: 'finished_at', render: formatTime },
-            ]}
-          />
+      <Card
+        className="dashboard-panel"
+        title={(
+          <div className="dashboard-panel-title">
+            <span>最近检查记录</span>
+            <small>仅展示最近 5 条</small>
+          </div>
         )}
+        loading={dashboardLoading}
+        extra={<Button size="small" onClick={() => onNavigate('checks')}>查看全部</Button>}
+      >
+        <DashboardRunList runs={runs.slice(0, 5)} onOpenChecks={() => onNavigate('checks')} />
       </Card>
-      <Card className="dashboard-panel" title="最近通知记录 / 趋势统计" loading={dashboardLoading}>
-        <div className="dashboard-bottom-grid">
-          <div className="dashboard-list-panel">
-            <div className="dashboard-list-head">
-              <strong>最近通知记录</strong>
-              <span>{recentNotifications.length} 条</span>
+      <div className="dashboard-bottom-grid">
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>最近通知记录</span>
+              <small>{recentNotifications.length} 条</small>
             </div>
-            {recentNotifications.length === 0 ? (
-              <div className="dashboard-empty">暂无通知记录</div>
-            ) : (
-              <div className="dashboard-record-list">
-                {recentNotifications.map(item => (
-                  <div key={item.id} className="dashboard-record-item">
-                    <div className="dashboard-record-item-head">
-                      <strong>{item.component_name}</strong>
-                      <StatusTag status={item.status} />
-                    </div>
-                    <div className="dashboard-record-item-meta">
-                      {item.version || '-'} · {item.recipient_email}
-                    </div>
-                    <div className="dashboard-record-item-meta">
-                      {formatTime(item.sent_at ?? item.created_at)}
-                    </div>
+          )}
+          loading={dashboardLoading}
+          extra={<Button size="small" onClick={() => onNavigate('notifications')}>查看全部</Button>}
+        >
+          {recentNotifications.length === 0 ? (
+            <DashboardEmptyState
+              title="暂无通知记录"
+              description="当发现新版本并发送通知后，这里会展示最近的发送结果。"
+            />
+          ) : (
+            <div className="dashboard-record-list">
+              {recentNotifications.map(item => (
+                <div key={item.id} className="dashboard-record-item">
+                  <div className="dashboard-record-item-head">
+                    <strong>{item.component_name}</strong>
+                    <StatusTag status={item.status} />
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="dashboard-trend-panel">
-            <div className="dashboard-list-head">
-              <strong>趋势统计</strong>
-              <span>最近数据</span>
+                  <div className="dashboard-record-item-meta">
+                    {item.version || '-'} · {item.recipient_email}
+                  </div>
+                  <div className="dashboard-record-item-meta">
+                    {formatTime(item.sent_at ?? item.created_at)}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="dashboard-trend-list">
-              <div className="dashboard-trend-row">
-                <div className="dashboard-trend-row-head">
-                  <span>检查成功率</span>
-                  <strong>{formatPercent(successRate)}</strong>
-                </div>
-                <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((successRate ?? 0) * 100)}%` }} /></div>
-                <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count}` : '暂无运行记录'}</small>
+          )}
+        </Card>
+        <Card
+          className="dashboard-panel"
+          title={(
+            <div className="dashboard-panel-title">
+              <span>运行指标</span>
+              <small>近一次运行概览</small>
+            </div>
+          )}
+          loading={dashboardLoading}
+        >
+          <div className="dashboard-trend-list">
+            <div className="dashboard-trend-row">
+              <div className="dashboard-trend-row-head">
+                <span>检查成功率</span>
+                <strong>{formatPercent(successRate)}</strong>
               </div>
-              <div className="dashboard-trend-row">
-                <div className="dashboard-trend-row-head">
-                  <span>通知成功率</span>
-                  <strong>{formatPercent(notificationSuccessRate)}</strong>
-                </div>
-                <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((notificationSuccessRate ?? 0) * 100)}%` }} /></div>
-                <small>{notifications.length ? `${notificationSuccessCount}/${notifications.length}` : '暂无通知记录'}</small>
+              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((successRate ?? 0) * 100)}%` }} /></div>
+              <small>{latestRun ? `${latestRun.success_count}/${latestRun.total_count}` : '暂无运行记录'}</small>
+            </div>
+            <div className="dashboard-trend-row">
+              <div className="dashboard-trend-row-head">
+                <span>通知成功率</span>
+                <strong>{formatPercent(notificationSuccessRate)}</strong>
               </div>
-              <div className="dashboard-trend-row">
-                <div className="dashboard-trend-row-head">
-                  <span>待评估更新</span>
-                  <strong>{latestRunUpdates.length}</strong>
-                </div>
-                <div className="dashboard-trend-bar"><span style={{ width: `${Math.min(100, latestRunUpdates.length * 18)}%` }} /></div>
-                <small>{latestRun ? `最近一次运行发现 ${latestRunUpdates.length} 条` : '暂无运行记录'}</small>
+              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((notificationSuccessRate ?? 0) * 100)}%` }} /></div>
+              <small>{notifications.length ? `${notificationSuccessCount}/${notifications.length}` : '暂无通知记录'}</small>
+            </div>
+            <div className="dashboard-trend-row">
+              <div className="dashboard-trend-row-head">
+                <span>当前待处理</span>
+                <strong>{pendingUpdates.length}</strong>
               </div>
-              <div className="dashboard-trend-row">
-                <div className="dashboard-trend-row-head">
-                  <span>发现更新占比</span>
-                  <strong>{formatPercent(updateHitRate)}</strong>
-                </div>
-                <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((updateHitRate ?? 0) * 100)}%` }} /></div>
-                <small>{latestRun ? `${latestRunUpdates.length}/${latestRun.total_count}` : '暂无运行记录'}</small>
+              <div className="dashboard-trend-bar"><span style={{ width: `${Math.min(100, pendingUpdates.length * 18)}%` }} /></div>
+              <small>{latestRun ? `${pendingUpdates.length}/${latestRun.total_count}` : '暂无运行记录'}</small>
+            </div>
+            <div className="dashboard-trend-row">
+              <div className="dashboard-trend-row-head">
+                <span>待处理占比</span>
+                <strong>{formatPercent(pendingRate)}</strong>
               </div>
+              <div className="dashboard-trend-bar"><span style={{ width: `${Math.round((pendingRate ?? 0) * 100)}%` }} /></div>
+              <small>{latestRun ? `${pendingUpdates.length}/${latestRun.total_count}` : '暂无运行记录'}</small>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
     </section>
   );
+}
+
+function DashboardRunList(props: { runs: SystemRun[]; onOpenChecks: () => void }) {
+  if (props.runs.length === 0) {
+    return (
+      <DashboardEmptyState
+        title="暂无检查记录"
+        description="系统会在定时任务触发后开始显示最近运行信息。"
+      />
+    );
+  }
+
+  return (
+    <div className="dashboard-run-list">
+      {props.runs.map(run => (
+        <div key={run.id} className="dashboard-run-row">
+          <div className="dashboard-run-row-main">
+            <div className="dashboard-run-row-head">
+              <strong>{run.trigger_type === 'scheduler' ? 'scheduler' : 'manual'}</strong>
+              <StatusTag status={run.status} />
+            </div>
+            <div className="dashboard-run-row-meta">
+              {run.total_count} 个组件 · {run.success_count} 成功 · {run.failed_count} 失败 · 耗时 {formatDuration(getRunDurationSeconds(run))}
+            </div>
+            <div className="dashboard-run-row-meta">
+              {formatTime(run.started_at)} - {formatTime(run.finished_at)}
+            </div>
+          </div>
+          <Button size="small" onClick={props.onOpenChecks}>查看详情</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DashboardEmptyState(props: { title: string; description: string; footer?: string }) {
+  return (
+    <div className="dashboard-empty dashboard-empty-tight">
+      <strong>{props.title}</strong>
+      <span>{props.description}</span>
+      {props.footer ? <small>{props.footer}</small> : null}
+    </div>
+  );
+}
+
+function getRunDurationSeconds(run: SystemRun) {
+  if (!run.finished_at) return null;
+  const start = new Date(run.started_at).getTime();
+  const end = new Date(run.finished_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return Math.round((end - start) / 1000);
+}
+
+function formatDuration(seconds?: number | null) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '-';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return `${minutes}m${remainder ? ` ${remainder}s` : ''}`;
+  const hours = Math.floor(minutes / 60);
+  const minuteRemainder = minutes % 60;
+  return `${hours}h${minuteRemainder ? ` ${minuteRemainder}m` : ''}`;
+}
+
+function formatInterval(seconds?: number) {
+  if (!seconds || seconds <= 0) return '-';
+  return formatDuration(seconds);
 }
 
 function Components({ isMobile }: { isMobile: boolean }) {
@@ -1575,15 +1729,20 @@ function formatPercent(value: number | null) {
 }
 
 function dashboardTagColor(value: string) {
-  if (value === 'success' || value === 'sent' || value === 'normal' || value === 'connected') return 'green';
-  if (value === 'failed' || value === 'degraded') return 'red';
-  if (value === 'running' || value === 'warning') return 'blue';
+  if (value === '正常' || value === '已完成' || value === 'success' || value === 'sent' || value === 'connected') return 'green';
+  if (value === '异常' || value === '失败' || value === 'degraded' || value === 'failed') return 'red';
+  if (value === '运行中' || value === '待运行' || value === '待检测' || value === 'warning' || value === 'running') return 'blue';
   return undefined;
 }
 
 function DashboardUpdateList(props: { updates: CheckRecord[]; compact?: boolean }) {
   if (props.updates.length === 0) {
-    return <div className="dashboard-empty">最近没有发现更新</div>;
+    return (
+      <DashboardEmptyState
+        title="暂无待处理更新"
+        description="最近一次检查已完成，或者当前没有新的上游版本需要处理。"
+      />
+    );
   }
 
   return (
@@ -1592,7 +1751,7 @@ function DashboardUpdateList(props: { updates: CheckRecord[]; compact?: boolean 
         <div key={item.id} className="dashboard-record-item">
           <div className="dashboard-record-item-head">
             <strong>{item.component_name}</strong>
-            <Tag color="orange">待评估</Tag>
+            <Tag color="orange">待处理</Tag>
           </div>
           <div className="dashboard-record-item-meta">
             {item.previous_version || '-'} {'->'} {item.latest_version || '-'}

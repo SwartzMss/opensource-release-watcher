@@ -53,6 +53,7 @@ export const api = {
     request<{ deleted: boolean }>(`/api/components/${id}`, { method: 'DELETE' }),
   checkComponent: (id: number) =>
     request<CheckRecord>(`/api/components/${id}/check`, { method: 'POST' }),
+  runChecks: () => request('/api/checks/run', { method: 'POST' }),
   systemRuns: () => request<PageData<SystemRun>>('/api/system-runs?page=1&page_size=10'),
   subscribers: (componentId: number) =>
     request<Subscriber[]>(`/api/components/${componentId}/subscribers`),

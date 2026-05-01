@@ -793,6 +793,21 @@ func (s *Store) DashboardSummary(ctx context.Context) (*DashboardSummary, error)
 		return nil, err
 	}
 	summary.LastFullCheckAt = timePtr(lastFullCheckAt)
+
+	var startedAt, finishedAt sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT started_at, finished_at
+		FROM system_runs
+		ORDER BY started_at DESC
+		LIMIT 1`).Scan(&startedAt, &finishedAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if startedAt.Valid && finishedAt.Valid {
+		duration := finishedAt.Time.Sub(startedAt.Time)
+		if duration > 0 {
+			summary.LastRunDurationSeconds = int(duration.Seconds())
+		}
+	}
 	return &summary, nil
 }
 
