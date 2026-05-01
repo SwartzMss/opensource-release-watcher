@@ -727,9 +727,11 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
 
   return (
     <>
-      <div className="table-actions">
-        <Button type="primary" onClick={() => openEditor()}>新增订阅人</Button>
-      </div>
+      <PageHeader
+        title="订阅人管理"
+        description="维护订阅人以及其关注的模块范围。"
+        action={<Button type="primary" onClick={() => openEditor()}>新增订阅人</Button>}
+      />
       {isMobile ? (
         <MobileSubscriberList
           loading={loading}
@@ -1336,7 +1338,7 @@ function FilterBar(props: {
       <div className="filter-bar-head">
         <div>
           <strong>筛选条件</strong>
-          <span>{activeCount ? `已选择 ${activeCount} 项` : '按条件缩小范围'}</span>
+          {activeCount > 0 && <span>{`已选择 ${activeCount} 项`}</span>}
         </div>
         <Space size={8}>
           {activeCount > 0 && <Button size="small" onClick={clearFilters}>清空</Button>}
