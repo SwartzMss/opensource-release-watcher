@@ -50,7 +50,7 @@ backend/
 | 配置项 | 必填 | 说明 |
 | --- | --- | --- |
 | SERVER_ADDR | 否 | HTTP 监听地址，默认 `:8080` |
-| DB_PATH | 否 | SQLite 文件路径，默认 `data/watcher.db` |
+| DB_PATH | 否 | SQLite 文件路径，默认 `data/watcher.db`，相对路径按启动时工作目录解析 |
 | GITHUB_TOKEN | 否 | GitHub API Token，用于提高限流额度 |
 | CHECK_INTERVAL | 否 | 定时检查间隔，例如 `6h` |
 | GRAPH_CLIENT_ID | 否 | Azure App Registration client ID |

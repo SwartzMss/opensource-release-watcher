@@ -185,6 +185,19 @@ DELETE /api/subscribers/{id}
 GET /api/global-subscribers
 ```
 
+响应字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | number | 订阅人 ID |
+| name | string | 订阅人名称 |
+| email | string | 订阅人邮箱 |
+| enabled | boolean | 是否启用 |
+| all_components | boolean | 是否订阅全部组件 |
+| component_ids | number[] | 选择订阅的组件 ID 列表 |
+| created_at | string | 创建时间 |
+| updated_at | string | 更新时间 |
+
 ### 3.6 新增订阅人
 
 ```http

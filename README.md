@@ -264,7 +264,7 @@ cp .env.example .env
 | 配置项 | 说明 |
 | --- | --- |
 | `SERVER_ADDR` | 后端监听地址，例如 `127.0.0.1:8000` |
-| `DB_PATH` | SQLite 数据库文件路径 |
+| `DB_PATH` | SQLite 数据库文件路径，相对路径按启动时工作目录解析 |
 | `GITHUB_TOKEN` | GitHub API Token，可空 |
 | `CHECK_INTERVAL` | 定时检查间隔，例如 `6h` |
 | `ADMIN_USERNAME` | 登录用户名，默认 `admin` |
