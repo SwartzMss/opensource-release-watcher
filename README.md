@@ -270,6 +270,7 @@ cp .env.example .env
 | `ADMIN_USERNAME` | 登录用户名，默认 `admin` |
 | `ADMIN_PASSWORD` | 登录密码，默认 `admin` |
 | `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境应设置为随机长字符串 |
+| `SESSION_IDLE_TIMEOUT` | 会话空闲超时时间，默认 `10m`，例如 `10m` |
 | `GRAPH_*` | 个人 Outlook / Microsoft Graph 发信配置 |
 | `DOMAIN` | nginx 对外域名 |
 | `EXTERNAL_PORT` | nginx HTTPS 对外端口 |
@@ -303,6 +304,7 @@ python3 tools/outlook_tokens.py
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=替换成强密码
 SESSION_SECRET=替换成随机长字符串
+SESSION_IDLE_TIMEOUT=10m
 ```
 
 ### 本地开发

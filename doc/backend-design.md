@@ -53,10 +53,13 @@ backend/
 | DB_PATH | 否 | SQLite 文件路径，默认 `data/watcher.db`，相对路径按启动时工作目录解析 |
 | GITHUB_TOKEN | 否 | GitHub API Token，用于提高限流额度 |
 | CHECK_INTERVAL | 否 | 定时检查间隔，例如 `6h` |
+| SESSION_IDLE_TIMEOUT | 否 | 会话空闲超时时间，默认 `10m` |
 | GRAPH_CLIENT_ID | 否 | Azure App Registration client ID |
 | GRAPH_CLIENT_SECRET | 否 | Azure App Registration client secret；公共客户端可不填 |
 | GRAPH_ACCESS_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph access token |
 | GRAPH_REFRESH_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph refresh token |
+
+登录态使用签名 cookie 保存，并在每次有效 API 请求后刷新空闲时间。会话在 `SESSION_IDLE_TIMEOUT` 指定的空闲时长后自动失效，默认 10 分钟。
 
 ## 4. API 设计
 

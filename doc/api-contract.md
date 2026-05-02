@@ -46,9 +46,51 @@
 }
 ```
 
-## 2. 组件接口
+## 2. 认证接口
 
-### 2.1 查询组件列表
+### 2.1 查询当前会话
+
+```http
+GET /api/auth/me
+```
+
+成功时返回当前登录用户信息。
+
+### 2.2 登录
+
+```http
+POST /api/auth/login
+```
+
+请求体：
+
+```json
+{
+  "username": "admin",
+  "password": "admin"
+}
+```
+
+### 2.3 退出登录
+
+```http
+POST /api/auth/logout
+```
+
+### 2.4 会话心跳
+
+```http
+POST /api/auth/heartbeat
+```
+
+作用：
+
+- 刷新会话空闲时间
+- 如果会话已失效，返回 `401`
+
+## 3. 组件接口
+
+### 3.1 查询组件列表
 
 ```http
 GET /api/components?page=1&page_size=20&keyword=protobuf&enabled=true
@@ -69,7 +111,7 @@ GET /api/components?page=1&page_size=20&keyword=protobuf&enabled=true
 | last_checked_at | string | 最近检查时间 |
 | updated_at | string | 更新时间 |
 
-### 2.2 新增组件
+### 3.2 新增组件
 
 ```http
 POST /api/components
@@ -88,7 +130,7 @@ POST /api/components
 }
 ```
 
-### 2.3 更新组件
+### 3.3 更新组件
 
 ```http
 PUT /api/components/{id}
@@ -96,7 +138,7 @@ PUT /api/components/{id}
 
 请求体字段与新增组件一致。
 
-### 2.4 手动检查单个组件
+### 3.4 手动检查单个组件
 
 ```http
 POST /api/components/{id}/check
@@ -117,14 +159,14 @@ POST /api/components/{id}/check
 }
 ```
 
-## 3. 订阅人接口
+## 4. 订阅人接口
 
 订阅分两种：
 
 - 订阅人可以选择订阅全部组件。
 - 订阅人也可以只选择部分组件。
 
-### 3.1 查询组件订阅人
+### 4.1 查询组件订阅人
 
 ```http
 GET /api/components/{id}/subscribers
@@ -141,7 +183,7 @@ GET /api/components/{id}/subscribers
 | enabled | boolean | 是否启用 |
 | created_at | string | 创建时间 |
 
-### 3.2 新增订阅人
+### 4.2 新增订阅人
 
 ```http
 POST /api/components/{id}/subscribers
@@ -157,7 +199,7 @@ POST /api/components/{id}/subscribers
 }
 ```
 
-### 3.3 更新订阅人
+### 4.3 更新订阅人
 
 ```http
 PUT /api/subscribers/{id}
@@ -173,13 +215,13 @@ PUT /api/subscribers/{id}
 }
 ```
 
-### 3.4 删除订阅人
+### 4.4 删除订阅人
 
 ```http
 DELETE /api/subscribers/{id}
 ```
 
-### 3.5 查询订阅人
+### 4.5 查询订阅人
 
 ```http
 GET /api/global-subscribers
@@ -198,7 +240,7 @@ GET /api/global-subscribers
 | created_at | string | 创建时间 |
 | updated_at | string | 更新时间 |
 
-### 3.6 新增订阅人
+### 4.6 新增订阅人
 
 ```http
 POST /api/global-subscribers
@@ -215,7 +257,7 @@ POST /api/global-subscribers
 }
 ```
 
-### 3.7 更新订阅人
+### 4.7 更新订阅人
 
 ```http
 PUT /api/global-subscribers/{id}
@@ -232,13 +274,13 @@ PUT /api/global-subscribers/{id}
 }
 ```
 
-### 3.8 删除订阅人
+### 4.8 删除订阅人
 
 ```http
 DELETE /api/global-subscribers/{id}
 ```
 
-### 3.9 更新订阅模块
+### 4.9 更新订阅模块
 
 ```http
 PUT /api/global-subscribers/{id}/components
@@ -253,9 +295,9 @@ PUT /api/global-subscribers/{id}/components
 }
 ```
 
-## 4. 检查记录接口
+## 5. 检查记录接口
 
-### 4.1 查询全量检查运行记录
+### 5.1 查询全量检查运行记录
 
 ```http
 GET /api/system-runs?page=1&page_size=20
@@ -275,7 +317,7 @@ GET /api/system-runs?page=1&page_size=20
 | finished_at | string | 结束时间 |
 | error_message | string | 全局失败原因 |
 
-### 4.2 查询检查记录
+### 5.2 查询检查记录
 
 ```http
 GET /api/check-records?page=1&page_size=20&component_id=1&status=success&has_update=true
@@ -300,9 +342,9 @@ GET /api/check-records?page=1&page_size=20&component_id=1&status=success&has_upd
 | error_message | string | 失败原因 |
 | checked_at | string | 检查时间 |
 
-## 5. 通知记录接口
+## 6. 通知记录接口
 
-### 5.1 查询通知记录
+### 6.1 查询通知记录
 
 ```http
 GET /api/notification-records?page=1&page_size=20&component_id=1&status=sent
@@ -324,7 +366,7 @@ GET /api/notification-records?page=1&page_size=20&component_id=1&status=sent
 | sent_at | string | 发送成功时间 |
 | created_at | string | 创建时间 |
 
-### 5.2 查询通知详情
+### 6.2 查询通知详情
 
 ```http
 GET /api/notification-records/{id}
@@ -332,7 +374,7 @@ GET /api/notification-records/{id}
 
 详情接口需要额外返回 `body` 字段，用于查看邮件正文快照。
 
-### 5.3 发送测试邮件
+### 6.3 发送测试邮件
 
 ```http
 POST /api/notification-records/test
@@ -356,7 +398,7 @@ POST /api/notification-records/test
 
 测试邮件只用于验证 Outlook / Microsoft Graph 发信配置，不写入通知记录。
 
-### 5.4 查询邮件授权状态
+### 6.4 查询邮件授权状态
 
 ```http
 GET /api/mail/status
@@ -371,16 +413,16 @@ GET /api/mail/status
 }
 ```
 
-## 6. 枚举值
+## 7. 枚举值
 
-### 6.1 check_strategy
+### 7.1 check_strategy
 
 | 值 | 说明 |
 | --- | --- |
 | release_first | 优先查询 Release，无 Release 时回退 Tag |
 | tag_only | 只查询 Tag |
 
-### 6.2 check status
+### 7.2 check status
 
 | 值 | 说明 |
 | --- | --- |
@@ -388,7 +430,7 @@ GET /api/mail/status
 | failed | 检查失败 |
 | skipped | 跳过检查 |
 
-### 6.3 notification status
+### 7.3 notification status
 
 | 值 | 说明 |
 | --- | --- |

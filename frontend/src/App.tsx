@@ -43,6 +43,10 @@ export function App() {
   const [user, setUser] = useState<AuthUser | null>();
   const [page, setPage] = useState<PageKey>('dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const idleLogoutTimer = useRef<number | null>(null);
+  const heartbeatTimer = useRef<number | null>(null);
+  const heartbeatPending = useRef(false);
+  const lastActivityAt = useRef(0);
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
 
@@ -65,6 +69,80 @@ export function App() {
     setUser(null);
     setPage('dashboard');
   }
+
+  useEffect(() => {
+    if (!user) {
+      if (idleLogoutTimer.current !== null) {
+        window.clearTimeout(idleLogoutTimer.current);
+        idleLogoutTimer.current = null;
+      }
+      if (heartbeatTimer.current !== null) {
+        window.clearInterval(heartbeatTimer.current);
+        heartbeatTimer.current = null;
+      }
+      heartbeatPending.current = false;
+      lastActivityAt.current = 0;
+      return;
+    }
+
+    const activityEvents: Array<keyof WindowEventMap> = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+    const heartbeatIntervalMs = 2 * 60 * 1000;
+    const heartbeatActivityWindowMs = 2 * 60 * 1000;
+    const heartbeatLoop = () => {
+      if (heartbeatPending.current) return;
+      if (Date.now() - lastActivityAt.current > heartbeatActivityWindowMs) return;
+      heartbeatPending.current = true;
+      api.heartbeat()
+        .catch(error => {
+          if (error instanceof Error && error.message.includes('unauthorized')) {
+            void logout();
+          }
+        })
+        .finally(() => {
+          heartbeatPending.current = false;
+        });
+    };
+    const resetTimer = () => {
+      lastActivityAt.current = Date.now();
+      if (idleLogoutTimer.current !== null) {
+        window.clearTimeout(idleLogoutTimer.current);
+      }
+      idleLogoutTimer.current = window.setTimeout(() => {
+        message.info('会话已因 10 分钟无操作退出');
+        void logout();
+      }, 10 * 60 * 1000);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        resetTimer();
+      }
+    };
+
+    activityEvents.forEach(eventName => {
+      window.addEventListener(eventName, resetTimer, { passive: true });
+    });
+    document.addEventListener('visibilitychange', handleVisibility);
+    heartbeatTimer.current = window.setInterval(heartbeatLoop, heartbeatIntervalMs);
+    resetTimer();
+    heartbeatLoop();
+
+    return () => {
+      if (idleLogoutTimer.current !== null) {
+        window.clearTimeout(idleLogoutTimer.current);
+        idleLogoutTimer.current = null;
+      }
+      if (heartbeatTimer.current !== null) {
+        window.clearInterval(heartbeatTimer.current);
+        heartbeatTimer.current = null;
+      }
+      heartbeatPending.current = false;
+      lastActivityAt.current = 0;
+      activityEvents.forEach(eventName => {
+        window.removeEventListener(eventName, resetTimer);
+      });
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [user]);
 
   if (user === undefined) {
     return <div className="boot">Loading...</div>;

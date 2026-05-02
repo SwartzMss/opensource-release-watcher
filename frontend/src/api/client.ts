@@ -28,6 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<AuthUser>('/api/auth/me'),
+  heartbeat: () => request<{ refreshed: boolean }>('/api/auth/heartbeat', { method: 'POST' }),
   login: (username: string, password: string) =>
     request<AuthUser>('/api/auth/login', {
       method: 'POST',

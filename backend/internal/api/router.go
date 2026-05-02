@@ -47,9 +47,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if strings.HasPrefix(req.URL.Path, "/api/") && !r.isPublicAPI(req) && !r.authenticated(req) {
-		writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
-		return
+	if strings.HasPrefix(req.URL.Path, "/api/") && !r.isPublicAPI(req) {
+		session, ok := r.authenticatedSession(req)
+		if !ok {
+			r.clearSessionCookie(w, req)
+			writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
+			return
+		}
+		r.refreshSessionCookie(w, req, session.username, session.expiresAt)
 	}
 	if strings.HasPrefix(req.URL.Path, "/api/") && req.Method != http.MethodGet {
 		log.Printf("api request method=%s path=%s remote=%s", req.Method, req.URL.Path, req.RemoteAddr)
@@ -61,6 +66,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("POST /api/auth/login", r.login)
 	r.mux.HandleFunc("POST /api/auth/logout", r.logout)
 	r.mux.HandleFunc("GET /api/auth/me", r.me)
+	r.mux.HandleFunc("POST /api/auth/heartbeat", r.heartbeat)
 	r.mux.HandleFunc("GET /api/dashboard/summary", r.dashboardSummary)
 	r.mux.HandleFunc("GET /api/components", r.listComponents)
 	r.mux.HandleFunc("POST /api/components", r.createComponent)
@@ -110,35 +116,30 @@ func (r *Router) login(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	expiresAt := time.Now().Add(24 * time.Hour)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    r.signSession(payload.Username, expiresAt),
-		Path:     "/",
-		Expires:  expiresAt,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   secureCookie(req),
-	})
+	r.writeSessionCookie(w, req, payload.Username, expiresAt, time.Now())
 	log.Printf("login success username=%s remote=%s", payload.Username, req.RemoteAddr)
 	writeOK(w, map[string]string{"username": payload.Username})
 }
 
 func (r *Router) logout(w http.ResponseWriter, req *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   secureCookie(req),
-	})
+	r.clearSessionCookie(w, req)
 	log.Printf("logout remote=%s", req.RemoteAddr)
 	writeOK(w, map[string]bool{"logged_out": true})
 }
 
 func (r *Router) me(w http.ResponseWriter, req *http.Request) {
 	writeOK(w, map[string]string{"username": r.auth.Username})
+}
+
+func (r *Router) heartbeat(w http.ResponseWriter, req *http.Request) {
+	session, ok := r.authenticatedSession(req)
+	if !ok {
+		r.clearSessionCookie(w, req)
+		writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
+		return
+	}
+	r.refreshSessionCookie(w, req, session.username, session.expiresAt)
+	writeOK(w, map[string]bool{"refreshed": true})
 }
 
 func (r *Router) mailAuthStatus(w http.ResponseWriter, req *http.Request) {
@@ -630,45 +631,97 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, err)
 }
 
-func (r *Router) authenticated(req *http.Request) bool {
-	cookie, err := req.Cookie(sessionCookieName)
-	if err != nil {
-		return false
-	}
-	username, expiresAt, ok := r.parseSession(cookie.Value)
-	return ok && username == r.auth.Username && time.Now().Before(expiresAt)
+type sessionInfo struct {
+	username   string
+	expiresAt  time.Time
+	lastActive time.Time
 }
 
-func (r *Router) signSession(username string, expiresAt time.Time) string {
-	payload := fmt.Sprintf("%s|%d", username, expiresAt.Unix())
+func (r *Router) authenticated(req *http.Request) bool {
+	_, ok := r.authenticatedSession(req)
+	return ok
+}
+
+func (r *Router) authenticatedSession(req *http.Request) (sessionInfo, bool) {
+	cookie, err := req.Cookie(sessionCookieName)
+	if err != nil {
+		return sessionInfo{}, false
+	}
+	username, expiresAt, lastActive, ok := r.parseSession(cookie.Value)
+	if !ok || username != r.auth.Username || !time.Now().Before(expiresAt) {
+		return sessionInfo{}, false
+	}
+	if r.auth.IdleTimeout > 0 && time.Since(lastActive) > r.auth.IdleTimeout {
+		return sessionInfo{}, false
+	}
+	return sessionInfo{username: username, expiresAt: expiresAt, lastActive: lastActive}, true
+}
+
+func (r *Router) signSession(username string, expiresAt, lastActive time.Time) string {
+	payload := fmt.Sprintf("%s|%d|%d", username, expiresAt.Unix(), lastActive.Unix())
 	signature := r.sessionSignature(payload)
 	return base64.RawURLEncoding.EncodeToString([]byte(payload + "|" + signature))
 }
 
-func (r *Router) parseSession(value string) (string, time.Time, bool) {
+func (r *Router) parseSession(value string) (string, time.Time, time.Time, bool) {
 	decoded, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 3 {
-		return "", time.Time{}, false
+	if len(parts) != 4 {
+		return "", time.Time{}, time.Time{}, false
 	}
 	expiresUnix, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return "", time.Time{}, false
+		return "", time.Time{}, time.Time{}, false
 	}
-	payload := parts[0] + "|" + parts[1]
-	if !hmac.Equal([]byte(parts[2]), []byte(r.sessionSignature(payload))) {
-		return "", time.Time{}, false
+	lastActiveUnix, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", time.Time{}, time.Time{}, false
 	}
-	return parts[0], time.Unix(expiresUnix, 0), true
+	payload := parts[0] + "|" + parts[1] + "|" + parts[2]
+	if !hmac.Equal([]byte(parts[3]), []byte(r.sessionSignature(payload))) {
+		return "", time.Time{}, time.Time{}, false
+	}
+	return parts[0], time.Unix(expiresUnix, 0), time.Unix(lastActiveUnix, 0), true
 }
 
 func (r *Router) sessionSignature(payload string) string {
 	mac := hmac.New(sha256.New, []byte(r.auth.Secret))
 	_, _ = mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func (r *Router) writeSessionCookie(w http.ResponseWriter, req *http.Request, username string, expiresAt, lastActive time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    r.signSession(username, expiresAt, lastActive),
+		Path:     "/",
+		Expires:  expiresAt,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookie(req),
+	})
+}
+
+func (r *Router) refreshSessionCookie(w http.ResponseWriter, req *http.Request, username string, expiresAt time.Time) {
+	if r.auth.IdleTimeout <= 0 {
+		return
+	}
+	r.writeSessionCookie(w, req, username, expiresAt, time.Now())
+}
+
+func (r *Router) clearSessionCookie(w http.ResponseWriter, req *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookie(req),
+	})
 }
 
 func secureCookie(req *http.Request) bool {

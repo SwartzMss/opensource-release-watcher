@@ -24,9 +24,10 @@ type Config struct {
 }
 
 type AuthConfig struct {
-	Username string
-	Password string
-	Secret   string
+	Username    string
+	Password    string
+	Secret      string
+	IdleTimeout time.Duration
 }
 
 func Load() Config {
@@ -42,9 +43,10 @@ func Load() Config {
 		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
 		CheckInterval: durationEnv("CHECK_INTERVAL", 6*time.Hour),
 		Auth: AuthConfig{
-			Username: adminUsername,
-			Password: adminPassword,
-			Secret:   env("SESSION_SECRET", adminUsername+":"+adminPassword),
+			Username:    adminUsername,
+			Password:    adminPassword,
+			Secret:      env("SESSION_SECRET", adminUsername+":"+adminPassword),
+			IdleTimeout: durationEnv("SESSION_IDLE_TIMEOUT", 10*time.Minute),
 		},
 		GraphMail: GraphMailConfig{
 			TenantID:     os.Getenv("GRAPH_TENANT_ID"),
