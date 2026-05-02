@@ -119,7 +119,7 @@
 | 可维护性 | 前后端分离，后端按 API、service、checker、storage、notifier 分层 |
 | 可靠性 | 检查失败不影响其他组件，失败原因需要记录 |
 | 幂等性 | 同一组件同一版本对同一收件人不重复通知 |
-| 可扩展性 | 后续可接入 GitHub Security Advisory、OSV、通知优先级和月度报告 |
+| 可扩展性 | 后续可接入 OSV、通知优先级和月度报告 |
 | 部署复杂度 | 单机部署优先，SQLite 存储，减少外部依赖 |
 | 配置方式 | Microsoft Graph 发信参数、监听端口、GitHub Token 等走服务端配置；组件数据走数据库维护 |
 

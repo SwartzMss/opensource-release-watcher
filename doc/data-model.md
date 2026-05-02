@@ -120,7 +120,69 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 PRIMARY KEY(name)
 ```
 
-### 2.6 check_records
+### 2.6 component_security_profiles
+
+保存组件的安全查询配置和最近一次安全判断摘要。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| component_id | INTEGER | 是 | 组件 ID |
+| security_mode | TEXT | 否 | 预留字段，第一版不启用 |
+| security_lookup_mode | TEXT | 是 | 查询优先级，第一版仅支持 `commit_first` |
+| security_commit_sha | TEXT | 否 | 若该组件版本可映射到固定提交，可缓存提交 SHA |
+| security_package_name | TEXT | 否 | 预留字段，第一版不使用 |
+| security_ecosystem | TEXT | 否 | 预留字段，第一版不使用 |
+| security_aliases | TEXT | 否 | 预留字段，第二阶段 Release Note / Changelog 检索时使用 |
+| security_notes | TEXT | 否 | 风险备注 |
+| security_tag_pattern | TEXT | 否 | 用于将 `current_version` 转换为 Git tag，第一版可默认尝试 `{version}` 和 `v{version}` |
+| last_security_status | TEXT | 否 | 最近一次安全判断结果，`affected`、`unknown`、`check_failed` |
+| last_security_reason | TEXT | 否 | 最近一次安全判断原因 |
+| last_security_raw_payload | TEXT | 否 | 最近一次 OSV 原始响应 |
+| last_security_checked_at | DATETIME | 否 | 最近一次安全判断时间 |
+| last_security_summary | TEXT | 否 | 最近一次安全判断摘要 |
+| created_at | DATETIME | 是 | 创建时间 |
+| updated_at | DATETIME | 是 | 更新时间 |
+
+建议约束：
+
+```sql
+PRIMARY KEY(component_id)
+FOREIGN KEY(component_id) REFERENCES components(id)
+```
+
+### 2.7 component_security_records
+
+保存每次安全判断命中的明细记录。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | INTEGER | 是 | 主键 |
+| component_id | INTEGER | 是 | 组件 ID |
+| version | TEXT | 是 | 被检查的版本 |
+| commit_sha | TEXT | 否 | 对应的 Git 提交 |
+| risk_type | TEXT | 是 | 第一版固定为 `vulnerability` |
+| risk_status | TEXT | 是 | `affected`、`unknown`、`check_failed` |
+| source | TEXT | 是 | `osv` |
+| identifier | TEXT | 否 | OSV ID |
+| package_name | TEXT | 否 | 预留字段，第一版不使用 |
+| ecosystem | TEXT | 否 | 预留字段，第一版不使用 |
+| affected_range | TEXT | 否 | OSV 返回的受影响 commit range 或版本范围 |
+| fixed_version | TEXT | 否 | 修复版本，若存在 |
+| severity | TEXT | 否 | 严重性 |
+| confidence | REAL | 否 | 置信度 |
+| summary | TEXT | 否 | 风险摘要 |
+| status_reason | TEXT | 否 | 当前状态原因 |
+| raw_payload | TEXT | 否 | OSV 原始响应 |
+| evidence_url | TEXT | 否 | 证据链接 |
+| created_at | DATETIME | 是 | 创建时间 |
+
+建议约束：
+
+```sql
+INDEX(component_id, version)
+```
+
+### 2.8 check_records
 
 保存每次版本检查结果。
 
@@ -148,7 +210,7 @@ CREATE INDEX idx_check_records_component_id ON check_records(component_id);
 CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
 ```
 
-### 2.7 notification_records
+### 2.9 notification_records
 
 保存邮件通知记录。
 
@@ -174,7 +236,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 FOREIGN KEY(check_record_id) REFERENCES check_records(id)
 ```
 
-### 2.8 system_runs
+### 2.10 system_runs
 
 保存全量检查任务运行记录。
 
