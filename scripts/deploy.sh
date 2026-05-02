@@ -331,6 +331,7 @@ case "$ACTION" in
     ;;
   stop)
     stop_services
+    remove_nginx_config
     ;;
   restart)
     stop_services

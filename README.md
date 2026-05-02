@@ -357,6 +357,8 @@ sudo scripts/deploy.sh clean-static
 sudo scripts/deploy.sh uninstall
 ```
 
+`stop` 会停止后端服务并移除本项目的 nginx 站点配置，因此页面和 API 都会暂时不可访问；`uninstall` 会进一步清理系统服务、静态资源和配置。
+
 查看后端服务日志：
 
 ```bash
