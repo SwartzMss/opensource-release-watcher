@@ -116,7 +116,6 @@ export function App() {
           onClose={() => setMobileNavOpen(false)}
         >
           <div className="mobile-drawer-session">
-            <strong>{user.username}</strong>
             <Button size="small" onClick={() => void logout()}>退出登录</Button>
           </div>
           <nav className="nav mobile-nav">
@@ -144,24 +143,27 @@ export function App() {
   return (
     <Layout className="shell">
       <Layout.Sider width={260} className="side">
-        <div className="brand">
-          <span className="brand-mark">OR</span>
+        <div className="sidebar-shell">
           <div>
-            <strong>Release Watcher</strong>
-            <small>开源组件版本感知</small>
+            <div className="brand">
+              <span className="brand-mark">OR</span>
+              <div>
+                <strong>Release Watcher</strong>
+                <small>开源组件版本感知</small>
+              </div>
+            </div>
+            <nav className="nav">
+              {navItems.map(([key, label]) => (
+                <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+          </div>
+          <div className="session">
+            <Button size="small" onClick={() => void logout()}>退出登录</Button>
           </div>
         </div>
-        <div className="session">
-          <span>{user.username}</span>
-          <Button size="small" onClick={() => void logout()}>退出</Button>
-        </div>
-        <nav className="nav">
-          {navItems.map(([key, label]) => (
-            <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
-              {label}
-            </button>
-          ))}
-        </nav>
       </Layout.Sider>
       <Layout.Content className="content">
         {pageContent}
