@@ -34,7 +34,7 @@ func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) err
 }
 
 func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) error {
-	log.Printf("update component id=%d name=%s repo=%s enabled=%t", c.ID, c.Name, c.RepoURL, c.Enabled)
+	log.Printf("update component id=%d name=%s repo=%s current_version=%s enabled=%t", c.ID, c.Name, c.RepoURL, c.CurrentVersion, c.Enabled)
 	return s.store.UpdateComponent(ctx, c)
 }
 

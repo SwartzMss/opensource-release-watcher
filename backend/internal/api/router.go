@@ -19,6 +19,7 @@ import (
 	"opensource-release-watcher/backend/internal/config"
 	"opensource-release-watcher/backend/internal/service"
 	"opensource-release-watcher/backend/internal/storage"
+	"opensource-release-watcher/backend/internal/version"
 )
 
 type Router struct {
@@ -231,6 +232,11 @@ func (r *Router) updateComponent(w http.ResponseWriter, req *http.Request) {
 	if !ok {
 		return
 	}
+	existing, err := r.service.GetComponent(req.Context(), id)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
 	var item storage.Component
 	if !decode(w, req, &item) {
 		return
@@ -240,6 +246,18 @@ func (r *Router) updateComponent(w http.ResponseWriter, req *http.Request) {
 	if err := validateComponent(item); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	if item.CurrentVersion != existing.CurrentVersion {
+		isNewer := version.IsNewer(item.CurrentVersion, existing.CurrentVersion)
+		log.Printf(
+			"update component version check id=%d old=%s new=%s allowed=%t remote=%s",
+			id, existing.CurrentVersion, item.CurrentVersion, isNewer, req.RemoteAddr,
+		)
+		if !isNewer {
+			log.Printf("update component version rejected id=%d old=%s new=%s remote=%s", id, existing.CurrentVersion, item.CurrentVersion, req.RemoteAddr)
+			writeError(w, http.StatusBadRequest, errors.New("当前版本只能向前升级，不能回退"))
+			return
+		}
 	}
 	if err := r.service.UpdateComponent(req.Context(), &item); err != nil {
 		writeStorageError(w, err)

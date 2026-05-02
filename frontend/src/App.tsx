@@ -39,6 +39,13 @@ import type {
 
 type PageKey = 'dashboard' | 'components' | 'subscribers' | 'checks' | 'notifications';
 
+function formatErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 export function App() {
   const [user, setUser] = useState<AuthUser | null>();
   const [page, setPage] = useState<PageKey>('dashboard');
@@ -317,7 +324,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       setCheckRecords(nextCheckRecords.items);
       setNotifications(nextNotifications.items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -571,7 +578,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
     try {
       setItems((await api.components()).items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -600,7 +607,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
       form.resetFields();
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -609,7 +616,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
       await api.updateComponent(row.id, { ...row, enabled });
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -619,7 +626,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
       message.success('组件已删除');
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -629,7 +636,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
       message.success('检查完成');
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -680,6 +687,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
         form={form}
         open={editing !== null}
         title={editing?.id ? '编辑组件' : '新增组件'}
+        isEditing={editing?.id !== undefined}
         isMobile={isMobile}
         onCancel={() => setEditing(null)}
         onFinish={saveComponent}
@@ -709,7 +717,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       setItems(nextItems);
       setComponents(nextComponents.items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -736,7 +744,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       }
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -751,7 +759,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       }
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -760,7 +768,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       await api.updateGlobalSubscriber(row.id, { enabled, name: row.name, email: row.email });
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -781,7 +789,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       message.success('订阅模块已更新');
       await load();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -793,7 +801,7 @@ function Subscribers({ isMobile }: { isMobile: boolean }) {
       const page = await api.notifications({ recipient_email: email, page_size: 10 });
       setRecentNotifications(page.items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setNotificationLoading(false);
     }
@@ -1089,7 +1097,7 @@ function Checks({ isMobile }: { isMobile: boolean }) {
       setItems(records.items);
       setComponents(componentPage.items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -1103,7 +1111,7 @@ function Checks({ isMobile }: { isMobile: boolean }) {
     try {
       setDetail(await api.checkRecord(id));
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -1171,7 +1179,7 @@ function Notifications({ isMobile }: { isMobile: boolean }) {
       setItems(records.items);
       setComponents(componentPage.items);
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -1185,7 +1193,7 @@ function Notifications({ isMobile }: { isMobile: boolean }) {
     try {
       setDetail(await api.notification(id));
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     }
   }
 
@@ -1197,7 +1205,7 @@ function Notifications({ isMobile }: { isMobile: boolean }) {
       setTestOpen(false);
       testForm.resetFields();
     } catch (error) {
-      message.error(String(error));
+      message.error(formatErrorMessage(error));
     } finally {
       setTestSending(false);
     }
@@ -1268,6 +1276,7 @@ function ComponentModal(props: {
   form: FormInstance<Partial<ComponentItem>>;
   open: boolean;
   title: string;
+  isEditing: boolean;
   isMobile: boolean;
   onCancel: () => void;
   onFinish: (values: Partial<ComponentItem>) => void | Promise<void>;
@@ -1355,6 +1364,9 @@ function ComponentModal(props: {
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
           <Input placeholder="3.20.1" suffix={latestVersionLoading ? <Spin size="small" /> : undefined} />
         </Form.Item>
+        <div className="component-version-help">
+          {props.isEditing ? '当前版本只能向前升级，不能回退；不修改版本时可直接保存其他字段。' : '新增时填写当前内部使用版本，后续检查会以此作为初始基线。'}
+        </div>
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
         </Form.Item>
