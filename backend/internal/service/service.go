@@ -30,11 +30,17 @@ func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifie
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
 	log.Printf("create component name=%s repo=%s enabled=%t", c.Name, c.RepoURL, c.Enabled)
+	if err := s.validateComponentVersion(ctx, *c); err != nil {
+		return err
+	}
 	return s.store.CreateComponent(ctx, c)
 }
 
 func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) error {
 	log.Printf("update component id=%d name=%s repo=%s current_version=%s enabled=%t", c.ID, c.Name, c.RepoURL, c.CurrentVersion, c.Enabled)
+	if err := s.validateComponentVersion(ctx, *c); err != nil {
+		return err
+	}
 	return s.store.UpdateComponent(ctx, c)
 }
 
@@ -53,6 +59,22 @@ func (s *Service) ListComponents(ctx context.Context, opts storage.ListOptions) 
 
 func (s *Service) LatestComponentVersion(ctx context.Context, repoURL, checkStrategy string) (*github.ReleaseInfo, error) {
 	return s.checker.Latest(ctx, repoURL, checkStrategy)
+}
+
+func (s *Service) validateComponentVersion(ctx context.Context, component storage.Component) error {
+	log.Printf("validate component version repo=%s strategy=%s version=%s", component.RepoURL, component.CheckStrategy, component.CurrentVersion)
+	ok, err := s.checker.HasVersion(ctx, component.RepoURL, component.CheckStrategy, component.CurrentVersion)
+	if err != nil {
+		log.Printf("validate component version failed repo=%s strategy=%s version=%s err=%v", component.RepoURL, component.CheckStrategy, component.CurrentVersion, err)
+		return err
+	}
+	if !ok {
+		err := fmt.Errorf("当前版本必须存在于 GitHub Release 或 Tag 历史中")
+		log.Printf("validate component version rejected repo=%s strategy=%s version=%s err=%v", component.RepoURL, component.CheckStrategy, component.CurrentVersion, err)
+		return err
+	}
+	log.Printf("validate component version passed repo=%s strategy=%s version=%s", component.RepoURL, component.CheckStrategy, component.CurrentVersion)
+	return nil
 }
 
 func (s *Service) CreateSubscriber(ctx context.Context, sub *storage.Subscriber) error {

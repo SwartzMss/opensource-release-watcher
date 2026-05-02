@@ -24,7 +24,7 @@
 | id | INTEGER | 是 | 主键 |
 | name | TEXT | 是 | 组件名称 |
 | repo_url | TEXT | 是 | GitHub 仓库完整地址 |
-| current_version | TEXT | 是 | 当前内部使用版本 |
+| current_version | TEXT | 是 | 当前内部使用版本，必须能在 GitHub Release 或 Tag 历史中找到 |
 | latest_version | TEXT | 否 | 最近检查到的上游版本 |
 | last_seen_version | TEXT | 否 | 最近已处理版本，用于组件级状态展示 |
 | check_strategy | TEXT | 是 | 检查策略，`release_first` 或 `tag_only` |

@@ -247,6 +247,10 @@ func (r *Router) updateComponent(w http.ResponseWriter, req *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if item.RepoURL != existing.RepoURL {
+		writeError(w, http.StatusBadRequest, errors.New("GitHub 仓库地址创建后不可修改"))
+		return
+	}
 	if item.CurrentVersion != existing.CurrentVersion {
 		isNewer := version.IsNewer(item.CurrentVersion, existing.CurrentVersion)
 		log.Printf(

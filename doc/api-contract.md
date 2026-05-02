@@ -102,8 +102,8 @@ GET /api/components?page=1&page_size=20&keyword=protobuf&enabled=true
 | --- | --- | --- |
 | id | number | 组件 ID |
 | name | string | 组件名称 |
-| repo_url | string | GitHub 仓库地址 |
-| current_version | string | 当前内部使用版本 |
+| repo_url | string | GitHub 仓库地址，创建后不可修改 |
+| current_version | string | 当前内部使用版本，必须能在 GitHub Release 或 Tag 历史中找到 |
 | latest_version | string | 最近检查到的上游版本 |
 | check_strategy | string | 检查策略 |
 | enabled | boolean | 是否启用 |
@@ -129,6 +129,13 @@ POST /api/components
   "notes": "C++ runtime dependency"
 }
 ```
+
+`current_version` 需要满足两个约束：
+
+- 只能向前升级，不允许回退。
+- 必须能在 GitHub Release 或 Tag 历史中找到。
+
+`repo_url` 在组件创建后不可修改。
 
 ### 3.3 更新组件
 

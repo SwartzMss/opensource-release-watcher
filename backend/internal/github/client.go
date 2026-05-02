@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"opensource-release-watcher/backend/internal/version"
 )
 
 type Client struct {
@@ -21,6 +23,8 @@ type ReleaseInfo struct {
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	Note        string     `json:"note"`
 }
+
+const historyPageSize = 100
 
 func NewClient(token string) *Client {
 	return &Client{
@@ -73,6 +77,67 @@ func (c *Client) LatestTag(ctx context.Context, owner, repo string) (*ReleaseInf
 		Title:   payload[0].Name,
 		URL:     fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, payload[0].Name),
 	}, nil
+}
+
+func (c *Client) HasVersion(ctx context.Context, owner, repo, targetVersion string, releaseFirst bool) (bool, error) {
+	targetVersion = version.Normalize(targetVersion)
+	if targetVersion == "" {
+		return false, nil
+	}
+	if releaseFirst {
+		found, err := c.historyContainsRelease(ctx, owner, repo, targetVersion)
+		if err != nil || found {
+			return found, err
+		}
+	}
+	return c.historyContainsTag(ctx, owner, repo, targetVersion)
+}
+
+func (c *Client) historyContainsRelease(ctx context.Context, owner, repo, targetVersion string) (bool, error) {
+	for page := 1; ; page++ {
+		var payload []struct {
+			TagName string `json:"tag_name"`
+			Name    string `json:"name"`
+		}
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=%d&page=%d", owner, repo, historyPageSize, page)
+		if err := c.get(ctx, url, &payload); err != nil {
+			return false, err
+		}
+		if len(payload) == 0 {
+			return false, nil
+		}
+		for _, item := range payload {
+			if version.Normalize(item.TagName) == targetVersion || version.Normalize(item.Name) == targetVersion {
+				return true, nil
+			}
+		}
+		if len(payload) < historyPageSize {
+			return false, nil
+		}
+	}
+}
+
+func (c *Client) historyContainsTag(ctx context.Context, owner, repo, targetVersion string) (bool, error) {
+	for page := 1; ; page++ {
+		var payload []struct {
+			Name string `json:"name"`
+		}
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags?per_page=%d&page=%d", owner, repo, historyPageSize, page)
+		if err := c.get(ctx, url, &payload); err != nil {
+			return false, err
+		}
+		if len(payload) == 0 {
+			return false, nil
+		}
+		for _, item := range payload {
+			if version.Normalize(item.Name) == targetVersion {
+				return true, nil
+			}
+		}
+		if len(payload) < historyPageSize {
+			return false, nil
+		}
+	}
 }
 
 func (c *Client) get(ctx context.Context, url string, out any) error {

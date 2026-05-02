@@ -96,6 +96,8 @@ frontend/
 | enabled | boolean | 是 | 是否启用定时检查 |
 | notes | string | 否 | 备注 |
 
+`repo_url` 创建后不可修改；`current_version` 作为版本基线使用，编辑时只允许向前升级，不允许回退，并且必须能在 GitHub Release 或 Tag 历史中找到；若需要重置基线，建议删除后重新创建组件。
+
 ### 2.3 订阅人管理
 
 用于维护订阅人以及其订阅的组件模块。

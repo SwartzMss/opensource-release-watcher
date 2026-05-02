@@ -280,6 +280,19 @@ a {
   font-size: 15px;
 }
 
+.component-mode-hint {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.component-mode-hint .ant-tag {
+  margin-inline-end: 0;
+}
+
 .page-header {
   align-items: center;
   flex-wrap: wrap;

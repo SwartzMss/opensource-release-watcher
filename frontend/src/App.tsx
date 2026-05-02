@@ -687,7 +687,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
         form={form}
         open={editing !== null}
         title={editing?.id ? '编辑组件' : '新增组件'}
-        isEditing={editing?.id !== undefined}
+        isEditing={Boolean(editing?.id)}
         isMobile={isMobile}
         onCancel={() => setEditing(null)}
         onFinish={saveComponent}
@@ -1355,18 +1355,18 @@ function ComponentModal(props: {
       destroyOnHidden
     >
       <Form form={props.form} layout="vertical" onFinish={props.onFinish} onValuesChange={handleValuesChange} initialValues={{ check_strategy: 'release_first', enabled: true }}>
+        <div className="component-mode-hint">
+          <Tag color={props.isEditing ? 'blue' : 'green'}>{props.isEditing ? '编辑组件' : '新建组件'}</Tag>
+        </div>
         <Form.Item name="name" label="组件名称" rules={[{ required: true }]}>
           <Input placeholder="protobuf" />
         </Form.Item>
         <Form.Item name="repo_url" label="GitHub 仓库" rules={[{ required: true }]}>
-          <Input placeholder="https://github.com/protocolbuffers/protobuf" />
+          <Input placeholder="https://github.com/protocolbuffers/protobuf" disabled={props.isEditing} />
         </Form.Item>
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
           <Input placeholder="3.20.1" suffix={latestVersionLoading ? <Spin size="small" /> : undefined} />
         </Form.Item>
-        <div className="component-version-help">
-          {props.isEditing ? '当前版本只能向前升级，不能回退；不修改版本时可直接保存其他字段。' : '新增时填写当前内部使用版本，后续检查会以此作为初始基线。'}
-        </div>
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
         </Form.Item>

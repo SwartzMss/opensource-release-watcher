@@ -16,6 +16,7 @@ import (
 type GitHubClient interface {
 	LatestRelease(ctx context.Context, owner, repo string) (*github.ReleaseInfo, error)
 	LatestTag(ctx context.Context, owner, repo string) (*github.ReleaseInfo, error)
+	HasVersion(ctx context.Context, owner, repo, targetVersion string, releaseFirst bool) (bool, error)
 }
 
 type Checker struct {
@@ -64,6 +65,14 @@ func (c *Checker) Latest(ctx context.Context, repoURL, checkStrategy string) (*g
 		CheckStrategy: checkStrategy,
 		Enabled:       true,
 	})
+}
+
+func (c *Checker) HasVersion(ctx context.Context, repoURL, checkStrategy, targetVersion string) (bool, error) {
+	owner, repo, ok := parseGitHubURL(repoURL)
+	if !ok {
+		return false, fmt.Errorf("invalid GitHub repository URL: %s", repoURL)
+	}
+	return c.github.HasVersion(ctx, owner, repo, targetVersion, checkStrategy != "tag_only")
 }
 
 func (c *Checker) fetchLatest(ctx context.Context, component storage.Component) (*github.ReleaseInfo, error) {
