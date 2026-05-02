@@ -106,7 +106,7 @@ a {
 .side {
   background: #ffffff !important;
   border-right: 1px solid var(--border);
-  padding: 24px 18px;
+  padding: 20px 14px;
 }
 
 .sidebar-shell {
@@ -119,20 +119,20 @@ a {
   align-items: center;
   color: var(--text);
   display: flex;
-  gap: 12px;
-  margin-bottom: 34px;
+  gap: 10px;
+  margin-bottom: 26px;
 }
 
 .brand-mark {
   align-items: center;
   background: var(--primary);
-  border-radius: 14px;
+  border-radius: 12px;
   color: #ffffff;
   display: inline-flex;
   font-weight: 800;
-  height: 46px;
+  height: 40px;
   justify-content: center;
-  width: 46px;
+  width: 40px;
 }
 
 .brand small {
@@ -157,6 +157,7 @@ a {
   border: 0;
   box-shadow: none;
   color: var(--primary);
+  font-weight: 500;
   padding-inline: 0;
 }
 
@@ -169,24 +170,32 @@ a {
 
 .nav {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .nav button {
   background: transparent;
   border: 0;
-  border-radius: 14px;
-  color: var(--text);
+  border-radius: 12px;
+  color: var(--muted-strong);
   cursor: pointer;
   font: inherit;
-  padding: 12px 14px;
+  font-weight: 500;
+  min-height: 42px;
+  padding: 10px 12px 10px 13px;
   text-align: left;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  width: 100%;
 }
 
 .nav button.active,
 .nav button:hover {
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+.nav button.active {
+  font-weight: 600;
 }
 
 .content {
