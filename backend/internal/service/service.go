@@ -74,6 +74,10 @@ func (s *Service) ListComponentSecurityRecords(ctx context.Context, componentID 
 	return s.store.ListComponentSecurityRecords(ctx, componentID)
 }
 
+func (s *Service) ListSecurityRecords(ctx context.Context, opts storage.ListOptions) ([]storage.ComponentSecurityRecord, int, error) {
+	return s.store.ListSecurityRecords(ctx, opts)
+}
+
 func (s *Service) ListComponents(ctx context.Context, opts storage.ListOptions) ([]storage.Component, int, error) {
 	return s.store.ListComponents(ctx, opts)
 }

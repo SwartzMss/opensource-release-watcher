@@ -39,6 +39,7 @@ export interface ComponentItem {
 export interface ComponentSecurityRecord {
   id: number;
   component_id: number;
+  component_name?: string;
   version: string;
   commit_sha?: string;
   risk_type: 'vulnerability';

@@ -38,7 +38,7 @@ import type {
   SystemRun,
 } from './types/domain';
 
-type PageKey = 'dashboard' | 'components' | 'subscribers' | 'checks' | 'notifications';
+type PageKey = 'dashboard' | 'components' | 'security' | 'subscribers' | 'checks' | 'notifications';
 
 function formatErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -163,6 +163,7 @@ export function App() {
   const navItems: Array<[PageKey, string]> = [
     ['dashboard', '仪表盘'],
     ['components', '组件管理'],
+    ['security', '漏洞检查'],
     ['subscribers', '订阅人管理'],
     ['checks', '检查记录'],
     ['notifications', '通知记录'],
@@ -172,6 +173,7 @@ export function App() {
     <>
       {page === 'dashboard' && <Dashboard isMobile={isMobile} />}
       {page === 'components' && <Components isMobile={isMobile} />}
+      {page === 'security' && <SecurityRecords isMobile={isMobile} />}
       {page === 'subscribers' && <Subscribers isMobile={isMobile} />}
       {page === 'checks' && <Checks isMobile={isMobile} />}
       {page === 'notifications' && <Notifications isMobile={isMobile} />}
@@ -735,6 +737,272 @@ function Components({ isMobile }: { isMobile: boolean }) {
       />
     </section>
   );
+}
+
+function SecurityRecords({ isMobile }: { isMobile: boolean }) {
+  const [components, setComponents] = useState<ComponentItem[]>([]);
+  const [records, setRecords] = useState<ComponentSecurityRecord[]>([]);
+  const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
+  const [selectedIssueStatus, setSelectedIssueStatus] = useState<'affected' | 'check_failed'>('affected');
+  const [detail, setDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[]; selectedRecordId?: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [nextComponents, nextRecords] = await Promise.all([
+        api.components({ page_size: 100 }),
+        loadAllSecurityRecords(),
+      ]);
+      setComponents(nextComponents.items);
+      setRecords(nextRecords);
+    } catch (error) {
+      message.error(formatErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  function showDetail(component: ComponentItem, componentRecords: ComponentSecurityRecord[]) {
+    setDetail({ component, records: componentRecords, selectedRecordId: componentRecords.find(item => item.risk_status === 'affected')?.id ?? componentRecords[0]?.id });
+  }
+
+  function selectDetailRecord(recordId: number) {
+    setDetail(prev => prev ? { ...prev, selectedRecordId: recordId } : prev);
+  }
+
+  const recordsByComponentId = new Map<number, ComponentSecurityRecord[]>();
+  records.forEach(record => {
+    const bucket = recordsByComponentId.get(record.component_id);
+    if (bucket) {
+      bucket.push(record);
+    } else {
+      recordsByComponentId.set(record.component_id, [record]);
+    }
+  });
+
+  const rows = components.map(component => {
+    const componentRecords = recordsByComponentId.get(component.id) ?? [];
+    const affectedRecords = componentRecords.filter(item => item.risk_status === 'affected');
+    const vulnerabilityIds = Array.from(new Set(affectedRecords.map(item => item.identifier).filter(Boolean))) as string[];
+    const latestRecordAt = component.security_checked_at || componentRecords[0]?.created_at || '';
+    return {
+      component,
+      componentRecords,
+      vulnerabilityIds,
+      latestRecordAt,
+    };
+  }).filter(row => {
+    if (row.component.security_status !== selectedIssueStatus) return false;
+    const componentID = filters.component_id ? Number(filters.component_id) : undefined;
+    if (componentID && row.component.id !== componentID) return false;
+    return true;
+  }).sort((left, right) => {
+    return (right.latestRecordAt || '').localeCompare(left.latestRecordAt || '');
+  });
+
+  const securityCounts = {
+    affected: components.filter(item => item.security_status === 'affected').length,
+    failed: components.filter(item => item.security_status === 'check_failed').length,
+  };
+  const latestSecurityAt = components
+    .map(item => item.security_checked_at)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+  const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
+  const componentOptions = components.map(item => ({ label: item.name, value: item.id }));
+
+  return (
+    <section>
+      <PageHeader title="漏洞检查" description="查看有漏洞和检查失败的组件。" />
+      <div className="metric-grid dashboard-metric-grid">
+        <Card
+          className={`metric dashboard-metric dashboard-metric-danger dashboard-metric-toggle${selectedIssueStatus === 'affected' ? ' dashboard-metric-active' : ''}`}
+          loading={loading && !components.length}
+          onClick={() => setSelectedIssueStatus('affected')}
+        >
+          <small>有漏洞组件</small>
+          <strong>{securityCounts.affected}</strong>
+        </Card>
+        <Card
+          className={`metric dashboard-metric dashboard-metric-danger dashboard-metric-toggle${selectedIssueStatus === 'check_failed' ? ' dashboard-metric-active' : ''}`}
+          loading={loading && !components.length}
+          onClick={() => setSelectedIssueStatus('check_failed')}
+        >
+          <small>检查失败</small>
+          <strong>{securityCounts.failed}</strong>
+        </Card>
+        <Card className="metric dashboard-metric dashboard-metric-neutral" loading={loading && !components.length}>
+          <small>最近检查</small>
+          <strong>{formatTime(latestSecurityAt)}</strong>
+        </Card>
+      </div>
+      <Card className="toolbar-card">
+        <div className="filter-bar-head">
+          <div>
+            <strong>筛选条件</strong>
+            {activeCount > 0 && <span>{`已选择 ${activeCount} 项`}</span>}
+          </div>
+          {activeCount > 0 && <Button size="small" onClick={() => setFilters({})}>清空</Button>}
+        </div>
+        <Space className="filter-space" wrap>
+          <Select
+            allowClear
+            showSearch
+            className="filter-select"
+            placeholder="组件"
+            value={filters.component_id}
+            optionFilterProp="label"
+            onChange={value => {
+              const next = { ...filters, component_id: value };
+              setFilters(next);
+            }}
+            options={componentOptions}
+          />
+        </Space>
+      </Card>
+      {isMobile ? (
+        <div className="mobile-list">
+          {loading ? (
+            <Card className="mobile-empty">加载中...</Card>
+          ) : rows.length === 0 ? (
+            <Card className="mobile-empty">{selectedIssueStatus === 'affected' ? '暂无有漏洞组件' : '暂无检查失败组件'}</Card>
+          ) : rows.map(row => (
+            <Card key={row.component.id} className="mobile-item-card">
+              <div className="mobile-item-head">
+                <div>
+                  <strong>{row.component.name}</strong>
+                  <div className="mobile-item-meta">{row.component.repo_url}</div>
+                </div>
+              </div>
+              <div className="mobile-item-grid">
+                <div><span>检查版本</span><strong>{row.component.current_version || '-'}</strong></div>
+                <div><span>说明</span><strong>{row.component.security_summary || row.component.security_reason || '-'}</strong></div>
+              </div>
+              {row.vulnerabilityIds.length > 0 && (
+                <div className="mobile-tags">
+                  {row.vulnerabilityIds.slice(0, 4).map(identifier => <Tag key={identifier}>{identifier}</Tag>)}
+                  {row.vulnerabilityIds.length > 4 && <Tag>+{row.vulnerabilityIds.length - 4}</Tag>}
+                </div>
+              )}
+              <div className="mobile-item-note">{row.component.security_summary || row.component.security_reason || '暂无安全摘要'}</div>
+              <div className="mobile-item-footer">
+                <Button size="small" onClick={() => showDetail(row.component, row.componentRecords)}>查看详情</Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Table
+          rowKey={row => String(row.component.id)}
+          loading={loading}
+          dataSource={rows}
+          pagination={{
+            pageSize: 20,
+            showSizeChanger: false,
+          }}
+          size="middle"
+          columns={[
+            { title: '组件', dataIndex: 'component', render: (_, row) => row.component.name },
+            {
+              title: '漏洞编号',
+              dataIndex: 'vulnerabilityIds',
+              render: (_, row) => (
+                selectedIssueStatus === 'affected' && row.vulnerabilityIds.length > 0 ? (
+                  <Space size={[4, 4]} wrap>
+                    {row.vulnerabilityIds.slice(0, 3).map(identifier => <Tag key={identifier}>{identifier}</Tag>)}
+                    {row.vulnerabilityIds.length > 3 && <Tag>+{row.vulnerabilityIds.length - 3}</Tag>}
+                  </Space>
+                ) : '-'
+              ),
+            },
+            { title: '检查版本', dataIndex: 'component', render: (_, row) => row.component.current_version || '-' },
+            { title: '说明', dataIndex: 'component', render: (_, row) => row.component.security_summary || row.component.security_reason || '-' },
+            { title: '最近检查', dataIndex: 'latestRecordAt', render: value => formatTime(value) },
+            { title: '操作', render: (_, row) => <Button size="small" onClick={() => showDetail(row.component, row.componentRecords)}>详情</Button> },
+          ]}
+          scroll={{ x: 960 }}
+        />
+      )}
+      <Drawer
+        title={detail ? `${detail.component.name} 的漏洞概览` : '漏洞概览'}
+        width={isMobile ? '100vw' : 'min(980px, 100vw)'}
+        open={detail !== null}
+        onClose={() => setDetail(null)}
+        destroyOnHidden
+      >
+        {detail && (
+          <div className="security-detail">
+            <Descriptions column={isMobile ? 1 : 2} bordered size="small">
+              <Descriptions.Item label="组件">{detail.component.name}</Descriptions.Item>
+              <Descriptions.Item label="检查版本">{detail.component.current_version || '-'}</Descriptions.Item>
+              <Descriptions.Item label="最近检查">{formatTime(detail.component.security_checked_at)}</Descriptions.Item>
+              <Descriptions.Item label="摘要">{detail.component.security_summary || detail.component.security_reason || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Card className="component-security-card" title="漏洞编号" style={{ marginTop: 16 }}>
+              {detail.records.filter(item => item.risk_status === 'affected').length === 0 ? (
+                <DashboardEmptyState title="暂无漏洞记录" />
+              ) : (
+                <div className="security-id-list">
+                  {detail.records.filter(item => item.risk_status === 'affected').map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`security-id-pill${detail.selectedRecordId === item.id ? ' active' : ''}`}
+                      onClick={() => selectDetailRecord(item.id)}
+                    >
+                      {item.identifier || `漏洞 #${item.id}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Card>
+            {(() => {
+              const selectedRecord = detail.records.find(item => item.id === detail.selectedRecordId)
+                ?? detail.records.find(item => item.risk_status === 'affected')
+                ?? null;
+              return (
+                <Card className="component-security-card" title="漏洞信息" style={{ marginTop: 16 }}>
+                  {!selectedRecord ? (
+                    <DashboardEmptyState title="暂无漏洞信息" />
+                  ) : (
+                    <div className="security-selected-record">
+                      <Descriptions column={isMobile ? 1 : 2} bordered size="small">
+                        <Descriptions.Item label="OSV ID">{selectedRecord.identifier || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="状态"><Tag color={securityStatusTagColor(selectedRecord.risk_status)}>{securityStatusLabel(selectedRecord.risk_status)}</Tag></Descriptions.Item>
+                        <Descriptions.Item label="严重性">{securitySeverityLabel(selectedRecord.severity)}</Descriptions.Item>
+                        <Descriptions.Item label="修复版本">{selectedRecord.fixed_version || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="说明">{selectedRecord.summary || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="证据">{selectedRecord.evidence_url ? <a href={selectedRecord.evidence_url} target="_blank" rel="noreferrer">{selectedRecord.evidence_url}</a> : '-'}</Descriptions.Item>
+                      </Descriptions>
+                    </div>
+                  )}
+                </Card>
+              );
+            })()}
+          </div>
+        )}
+      </Drawer>
+    </section>
+  );
+}
+
+async function loadAllSecurityRecords(): Promise<ComponentSecurityRecord[]> {
+  const items: ComponentSecurityRecord[] = [];
+  let page = 1;
+  let total = 0;
+  do {
+    const response = await api.securityRecords({ page, page_size: 100 });
+    items.push(...response.items);
+    total = response.total;
+    page += 1;
+  } while (items.length < total);
+  return items;
 }
 
 function Subscribers({ isMobile }: { isMobile: boolean }) {
@@ -1923,6 +2191,29 @@ function componentSecurityMeta(component?: Partial<ComponentItem>) {
     return { label: '检查失败', color: 'red', alertType: 'warning' as const };
   }
   return { label: '未识别', color: 'default', alertType: 'info' as const };
+}
+
+function securityStatusLabel(status?: string) {
+  if (status === 'affected') return '有漏洞';
+  if (status === 'check_failed') return '检查失败';
+  if (status === 'unknown') return '未识别';
+  return '未识别';
+}
+
+function securityStatusTagColor(status?: string) {
+  if (status === 'affected') return 'red';
+  if (status === 'check_failed') return 'orange';
+  return 'default';
+}
+
+function securitySeverityLabel(value?: string) {
+  if (!value) return '-';
+  const normalized = value.toLowerCase();
+  if (normalized.includes('critical')) return '严重';
+  if (normalized.includes('high')) return '高';
+  if (normalized.includes('medium')) return '中';
+  if (normalized.includes('low')) return '低';
+  return value;
 }
 
 function emptyComponent(): ComponentItem {

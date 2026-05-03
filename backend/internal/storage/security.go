@@ -3,17 +3,19 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
 func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID int64) ([]ComponentSecurityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, component_id, version, commit_sha, risk_type, risk_status, source, identifier,
+		SELECT rs.id, rs.component_id, c.name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
 		       affected_range, fixed_version, severity, confidence, summary, status_reason,
-		       raw_payload, evidence_url, created_at
-		FROM component_security_records
-		WHERE component_id = ?
-		ORDER BY created_at DESC, id DESC`, componentID)
+		       raw_payload, evidence_url, rs.created_at
+		FROM component_security_records rs
+		JOIN components c ON c.id = rs.component_id
+		WHERE rs.component_id = ?
+		ORDER BY rs.created_at DESC, rs.id DESC`, componentID)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +26,7 @@ func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID in
 		var record ComponentSecurityRecord
 		var commitSHA, identifier, affectedRange, fixedVersion, severity, summary, statusReason, rawPayload, evidenceURL sql.NullString
 		if err := rows.Scan(
-			&record.ID, &record.ComponentID, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
+			&record.ID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
 			&affectedRange, &fixedVersion, &severity, &record.Confidence, &summary, &statusReason,
 			&rawPayload, &evidenceURL, &record.CreatedAt,
 		); err != nil {
@@ -45,6 +47,65 @@ func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID in
 		return nil, err
 	}
 	return records, nil
+}
+
+func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]ComponentSecurityRecord, int, error) {
+	clauses := []string{"1 = 1"}
+	args := []any{}
+	if opts.ComponentID > 0 {
+		clauses = append(clauses, "rs.component_id = ?")
+		args = append(args, opts.ComponentID)
+	}
+	if opts.SecurityStatus != "" {
+		clauses = append(clauses, "rs.risk_status = ?")
+		args = append(args, opts.SecurityStatus)
+	}
+	where := strings.Join(clauses, " AND ")
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM component_security_records rs WHERE "+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	limit, offset := opts.LimitOffset()
+	queryArgs := append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rs.id, rs.component_id, c.name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
+		       rs.raw_payload, rs.evidence_url, rs.created_at
+		FROM component_security_records rs
+		JOIN components c ON c.id = rs.component_id
+		WHERE `+where+`
+		ORDER BY rs.created_at DESC, rs.id DESC LIMIT ? OFFSET ?`, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := []ComponentSecurityRecord{}
+	for rows.Next() {
+		var record ComponentSecurityRecord
+		var commitSHA, identifier, affectedRange, fixedVersion, severity, summary, statusReason, rawPayload, evidenceURL sql.NullString
+		if err := rows.Scan(
+			&record.ID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
+			&affectedRange, &fixedVersion, &severity, &record.Confidence, &summary, &statusReason,
+			&rawPayload, &evidenceURL, &record.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		record.CommitSHA = commitSHA.String
+		record.Identifier = identifier.String
+		record.AffectedRange = affectedRange.String
+		record.FixedVersion = fixedVersion.String
+		record.Severity = severity.String
+		record.Summary = summary.String
+		record.StatusReason = statusReason.String
+		record.RawPayload = rawPayload.String
+		record.EvidenceURL = evidenceURL.String
+		items = append(items, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func (s *Store) GetComponentSecurityProfile(ctx context.Context, componentID int64) (*ComponentSecurityProfile, error) {

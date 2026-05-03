@@ -112,6 +112,7 @@ type ComponentSecurityProfile struct {
 type ComponentSecurityRecord struct {
 	ID            int64     `json:"id"`
 	ComponentID   int64     `json:"component_id"`
+	ComponentName string    `json:"component_name,omitempty"`
 	Version       string    `json:"version"`
 	CommitSHA     string    `json:"commit_sha,omitempty"`
 	RiskType      string    `json:"risk_type"`
@@ -150,6 +151,7 @@ type ListOptions struct {
 	ComponentID    int64
 	RecipientEmail string
 	HasUpdate      *bool
+	SecurityStatus string
 }
 
 func (o ListOptions) LimitOffset() (int, int) {

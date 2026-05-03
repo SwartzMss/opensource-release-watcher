@@ -57,6 +57,8 @@ export const api = {
     request<CheckRecord>(`/api/components/${id}/check`, { method: 'POST' }),
   componentSecurityRecords: (id: number) =>
     request<ComponentSecurityRecord[]>(`/api/components/${id}/security-records`),
+  securityRecords: (params?: Record<string, string | number | boolean | undefined>) =>
+    request<PageData<ComponentSecurityRecord>>(`/api/security-records?${query({ page: 1, page_size: 50, ...params })}`),
   runChecks: () => request('/api/checks/run', { method: 'POST' }),
   systemRuns: () => request<PageData<SystemRun>>('/api/system-runs?page=1&page_size=10'),
   subscribers: (componentId: number) =>

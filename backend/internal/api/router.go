@@ -92,6 +92,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("GET /api/system-runs", r.listSystemRuns)
 	r.mux.HandleFunc("GET /api/check-records", r.listCheckRecords)
 	r.mux.HandleFunc("GET /api/check-records/{id}", r.getCheckRecord)
+	r.mux.HandleFunc("GET /api/security-records", r.listSecurityRecords)
 	r.mux.HandleFunc("GET /api/notification-records", r.listNotificationRecords)
 	r.mux.HandleFunc("POST /api/notification-records/test", r.testNotification)
 	r.mux.HandleFunc("GET /api/notification-records/{id}", r.getNotificationRecord)
@@ -528,6 +529,19 @@ func (r *Router) listSystemRuns(w http.ResponseWriter, req *http.Request) {
 func (r *Router) listCheckRecords(w http.ResponseWriter, req *http.Request) {
 	opts := listOptions(req)
 	items, total, err := r.service.ListCheckRecords(req.Context(), opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writePage(w, items, total, opts)
+}
+
+func (r *Router) listSecurityRecords(w http.ResponseWriter, req *http.Request) {
+	opts := listOptions(req)
+	if status := strings.TrimSpace(req.URL.Query().Get("risk_status")); status != "" {
+		opts.SecurityStatus = status
+	}
+	items, total, err := r.service.ListSecurityRecords(req.Context(), opts)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
