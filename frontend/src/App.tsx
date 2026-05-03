@@ -171,7 +171,15 @@ export function App() {
 
   const pageContent = (
     <>
-      {page === 'dashboard' && <Dashboard isMobile={isMobile} />}
+      {page === 'dashboard' && (
+        <Dashboard
+          isMobile={isMobile}
+          onOpenComponents={() => setPage('components')}
+          onOpenSecurity={() => setPage('security')}
+          onOpenChecks={() => setPage('checks')}
+          onOpenNotifications={() => setPage('notifications')}
+        />
+      )}
       {page === 'components' && <Components isMobile={isMobile} />}
       {page === 'security' && <SecurityRecords isMobile={isMobile} />}
       {page === 'subscribers' && <Subscribers isMobile={isMobile} />}
@@ -180,17 +188,22 @@ export function App() {
     </>
   );
 
+  function openDashboard() {
+    setPage('dashboard');
+    setMobileNavOpen(false);
+  }
+
   if (isMobile) {
     return (
       <div className="shell mobile-shell">
         <header className="mobile-topbar">
-          <div className="brand mobile-brand">
+          <button type="button" className="brand mobile-brand brand-button" onClick={openDashboard}>
             <span className="brand-mark">OR</span>
             <div>
               <strong>Release Watcher</strong>
               <small>开源组件版本感知</small>
             </div>
-          </div>
+          </button>
           <div className="mobile-topbar-actions">
             <Button className="mobile-menu-button" onClick={() => setMobileNavOpen(true)}>☰</Button>
             <Button size="small" onClick={() => void logout()}>退出</Button>
@@ -230,16 +243,16 @@ export function App() {
 
   return (
     <Layout className="shell">
-      <Layout.Sider width={260} className="side">
-        <div className="sidebar-shell">
+        <Layout.Sider width={260} className="side">
+          <div className="sidebar-shell">
           <div>
-            <div className="brand">
+            <button type="button" className="brand brand-button" onClick={openDashboard}>
               <span className="brand-mark">OR</span>
               <div>
                 <strong>Release Watcher</strong>
                 <small>开源组件版本感知</small>
               </div>
-            </div>
+            </button>
             <nav className="nav">
               {navItems.map(([key, label]) => (
                 <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
@@ -303,7 +316,19 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   );
 }
 
-function Dashboard({ isMobile }: { isMobile: boolean }) {
+function Dashboard({
+  isMobile,
+  onOpenComponents,
+  onOpenSecurity,
+  onOpenChecks,
+  onOpenNotifications,
+}: {
+  isMobile: boolean;
+  onOpenComponents: () => void;
+  onOpenSecurity: () => void;
+  onOpenChecks: () => void;
+  onOpenNotifications: () => void;
+}) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
   const [checkRecords, setCheckRecords] = useState<CheckRecord[]>([]);
@@ -311,6 +336,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
+  const updatesSectionRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -346,13 +372,15 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
   const securityByComponentId = new Map(components.map(item => [item.id, item]));
   const vulnerableComponentTotal = components.filter(item => item.security_status === 'affected').length;
+  function openUpdatesSection() {
+    updatesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   const metricCards = [
-    { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
-    { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
-    { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const },
-    { label: '漏洞检查', value: vulnerableComponentTotal, tone: 'danger' as const },
-    { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
-    { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
+    { label: '组件管理', value: summary?.component_total ?? 0, tone: 'neutral' as const, onClick: onOpenComponents },
+    { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const, onClick: openUpdatesSection },
+    { label: '漏洞检查', value: vulnerableComponentTotal, tone: 'danger' as const, onClick: onOpenSecurity },
+    { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenChecks },
+    { label: '通知记录', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenNotifications },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string; tone?: 'emphasis' }> = [
@@ -427,7 +455,12 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       />
       <div className="metric-grid dashboard-metric-grid">
         {metricCards.map(card => (
-          <Card key={card.label} className={`metric dashboard-metric dashboard-metric-${card.tone}`} loading={dashboardLoading}>
+          <Card
+            key={card.label}
+            className={`metric dashboard-metric dashboard-metric-${card.tone}${card.label === '组件更新' ? ' dashboard-metric-anchor' : ' dashboard-metric-toggle'}`}
+            loading={dashboardLoading}
+            onClick={card.onClick}
+          >
             <small>{card.label}</small>
             <strong>{card.value}</strong>
           </Card>
@@ -486,6 +519,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
         </Card>
       </div>
       <Card
+        ref={updatesSectionRef}
         className="dashboard-panel"
         title={(
           <div className="dashboard-panel-title">
