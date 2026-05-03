@@ -26,9 +26,34 @@ export interface ComponentItem {
   last_check_status: 'success' | 'failed' | 'skipped' | '';
   last_check_error: string;
   last_checked_at?: string;
+  security_commit_sha?: string;
+  security_status?: 'affected' | 'unknown' | 'check_failed' | '';
+  security_reason?: string;
+  security_summary?: string;
+  security_checked_at?: string;
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ComponentSecurityRecord {
+  id: number;
+  component_id: number;
+  version: string;
+  commit_sha?: string;
+  risk_type: 'vulnerability';
+  risk_status: 'affected' | 'unknown' | 'check_failed';
+  source: string;
+  identifier?: string;
+  affected_range?: string;
+  fixed_version?: string;
+  severity?: string;
+  confidence?: number;
+  summary?: string;
+  status_reason?: string;
+  raw_payload?: string;
+  evidence_url?: string;
+  created_at: string;
 }
 
 export interface Subscriber {

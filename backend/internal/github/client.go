@@ -140,6 +140,50 @@ func (c *Client) historyContainsTag(ctx context.Context, owner, repo, targetVers
 	}
 }
 
+func (c *Client) FindTagCommit(ctx context.Context, owner, repo string, tagCandidates []string) (string, string, error) {
+	candidates := map[string]struct{}{}
+	for _, candidate := range tagCandidates {
+		candidate = version.Normalize(candidate)
+		if candidate == "" {
+			continue
+		}
+		candidates[candidate] = struct{}{}
+	}
+	if len(candidates) == 0 {
+		return "", "", fmt.Errorf("tag candidates are required")
+	}
+	for page := 1; ; page++ {
+		var payload []struct {
+			Name   string `json:"name"`
+			Commit struct {
+				SHA string `json:"sha"`
+			} `json:"commit"`
+		}
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags?per_page=%d&page=%d", owner, repo, historyPageSize, page)
+		if err := c.get(ctx, url, &payload); err != nil {
+			return "", "", err
+		}
+		if len(payload) == 0 {
+			return "", "", fmt.Errorf("no matching tags found")
+		}
+		for _, item := range payload {
+			tagName := version.Normalize(item.Name)
+			if _, ok := candidates[tagName]; ok || containsCandidate(candidates, item.Name) {
+				return item.Commit.SHA, item.Name, nil
+			}
+		}
+		if len(payload) < historyPageSize {
+			return "", "", fmt.Errorf("no matching tags found")
+		}
+	}
+}
+
+func containsCandidate(candidates map[string]struct{}, value string) bool {
+	value = version.Normalize(value)
+	_, ok := candidates[value]
+	return ok
+}
+
 func (c *Client) get(ctx context.Context, url string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

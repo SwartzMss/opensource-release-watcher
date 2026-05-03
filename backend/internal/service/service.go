@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"opensource-release-watcher/backend/internal/checker"
 	"opensource-release-watcher/backend/internal/github"
 	"opensource-release-watcher/backend/internal/notifier"
+	"opensource-release-watcher/backend/internal/security"
 	"opensource-release-watcher/backend/internal/storage"
 	"opensource-release-watcher/backend/internal/version"
 )
@@ -18,14 +20,15 @@ import (
 type Service struct {
 	store         *storage.Store
 	checker       *checker.Checker
+	security      *security.Checker
 	notifier      notifier.Notifier
 	mailAuth      notifier.StatusProvider
 	checkInterval time.Duration
 }
 
-func New(store *storage.Store, checker *checker.Checker, mailer notifier.Notifier, checkInterval time.Duration) *Service {
+func New(store *storage.Store, checker *checker.Checker, securityChecker *security.Checker, mailer notifier.Notifier, checkInterval time.Duration) *Service {
 	mailAuth, _ := mailer.(notifier.StatusProvider)
-	return &Service{store: store, checker: checker, notifier: mailer, mailAuth: mailAuth, checkInterval: checkInterval}
+	return &Service{store: store, checker: checker, security: securityChecker, notifier: mailer, mailAuth: mailAuth, checkInterval: checkInterval}
 }
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
@@ -33,7 +36,14 @@ func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.validateComponentVersion(ctx, *c); err != nil {
 		return err
 	}
-	return s.store.CreateComponent(ctx, c)
+	if err := s.store.CreateComponent(ctx, c); err != nil {
+		return err
+	}
+	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
+		log.Printf("clear security commit cache failed component_id=%d trigger=create_component err=%v", c.ID, err)
+	}
+	s.syncSecurity(ctx, *c, true, "create_component")
+	return nil
 }
 
 func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) error {
@@ -41,7 +51,14 @@ func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.validateComponentVersion(ctx, *c); err != nil {
 		return err
 	}
-	return s.store.UpdateComponent(ctx, c)
+	if err := s.store.UpdateComponent(ctx, c); err != nil {
+		return err
+	}
+	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
+		log.Printf("clear security commit cache failed component_id=%d trigger=update_component err=%v", c.ID, err)
+	}
+	s.syncSecurity(ctx, *c, true, "update_component")
+	return nil
 }
 
 func (s *Service) DeleteComponent(ctx context.Context, id int64) error {
@@ -51,6 +68,10 @@ func (s *Service) DeleteComponent(ctx context.Context, id int64) error {
 
 func (s *Service) GetComponent(ctx context.Context, id int64) (*storage.Component, error) {
 	return s.store.GetComponent(ctx, id)
+}
+
+func (s *Service) ListComponentSecurityRecords(ctx context.Context, componentID int64) ([]storage.ComponentSecurityRecord, error) {
+	return s.store.ListComponentSecurityRecords(ctx, componentID)
 }
 
 func (s *Service) ListComponents(ctx context.Context, opts storage.ListOptions) ([]storage.Component, int, error) {
@@ -142,6 +163,7 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 			record.ErrorMessage = err.Error()
 		}
 	}
+	s.syncSecurity(ctx, *component, false, "manual_check")
 	log.Printf("check component finished id=%d status=%s has_update=%t latest=%s previous=%s", component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
 	return &record, nil
 }
@@ -177,8 +199,10 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 			if record.LatestVersion != "" {
 				_ = s.notifyUpdate(ctx, component, record)
 			}
+			s.syncSecurity(ctx, component, false, "scheduler_run")
 			continue
 		}
+		s.syncSecurity(ctx, component, false, "scheduler_run")
 		run.FailedCount++
 	}
 	run.Status = "success"
@@ -232,6 +256,54 @@ func (s *Service) SendTestNotification(ctx context.Context, recipient string) er
 发送时间：%s
 `, now),
 	})
+}
+
+func (s *Service) syncSecurity(ctx context.Context, component storage.Component, forceResolve bool, trigger string) {
+	if s.security == nil {
+		return
+	}
+	startedAt := time.Now().UTC()
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	profile, err := s.store.GetComponentSecurityProfile(ctx, component.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			profile = &storage.ComponentSecurityProfile{
+				ComponentID:        component.ID,
+				SecurityLookupMode: "commit_first",
+			}
+			log.Printf("security profile missing component_id=%d trigger=%s, using defaults", component.ID, trigger)
+		} else {
+			log.Printf("security profile load failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+			return
+		}
+	}
+	if forceResolve {
+		profile.SecurityCommitSHA = ""
+	}
+	if profile.SecurityLookupMode == "" {
+		profile.SecurityLookupMode = "commit_first"
+	}
+	report, err := s.security.Check(ctx, component, *profile, forceResolve)
+	if err != nil {
+		log.Printf("security check failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+		return
+	}
+	if err := s.store.SaveComponentSecurityState(ctx, report.Profile, report.Records); err != nil {
+		log.Printf("security state save failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+		return
+	}
+	log.Printf(
+		"security check persisted component_id=%d trigger=%s status=%s reason=%s commit=%s records=%d duration=%s",
+		component.ID,
+		trigger,
+		report.Profile.LastSecurityStatus,
+		report.Profile.LastSecurityReason,
+		report.Profile.SecurityCommitSHA,
+		len(report.Records),
+		time.Since(startedAt).Round(time.Millisecond),
+	)
 }
 
 func (s *Service) ListSystemRuns(ctx context.Context, opts storage.ListOptions) ([]storage.SystemRun, int, error) {

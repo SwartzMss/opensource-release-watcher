@@ -10,8 +10,11 @@ import (
 	"opensource-release-watcher/backend/internal/checker"
 	"opensource-release-watcher/backend/internal/config"
 	"opensource-release-watcher/backend/internal/github"
+	"opensource-release-watcher/backend/internal/gitrepo"
 	"opensource-release-watcher/backend/internal/notifier"
+	"opensource-release-watcher/backend/internal/osv"
 	"opensource-release-watcher/backend/internal/scheduler"
+	"opensource-release-watcher/backend/internal/security"
 	"opensource-release-watcher/backend/internal/service"
 	"opensource-release-watcher/backend/internal/storage"
 )
@@ -31,9 +34,12 @@ func main() {
 	defer store.Close()
 
 	githubClient := github.NewClient(cfg.GitHubToken)
+	gitrepoResolver := gitrepo.New(githubClient)
+	osvClient := osv.NewClient()
+	securityChecker := security.New(gitrepoResolver, osvClient)
 	mailNotifier := notifier.NewGraphDelegatedMail(cfg.GraphMail)
 	releaseChecker := checker.New(githubClient)
-	watcherService := service.New(store, releaseChecker, mailNotifier, cfg.CheckInterval)
+	watcherService := service.New(store, releaseChecker, securityChecker, mailNotifier, cfg.CheckInterval)
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
 	router := api.NewRouter(watcherService, cfg.Auth)

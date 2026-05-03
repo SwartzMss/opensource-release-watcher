@@ -267,10 +267,14 @@ func (s *Store) DeleteComponent(ctx context.Context, id int64) error {
 
 func (s *Store) GetComponent(ctx context.Context, id int64) (*Component, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, repo_url, current_version, latest_version,
-		       last_seen_version, check_strategy, enabled,
-		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
-		FROM components WHERE id = ?`, id)
+		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
+		       c.last_seen_version, c.check_strategy, c.enabled,
+		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
+		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.last_security_summary, sp.last_security_checked_at
+		FROM components c
+		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
+		WHERE c.id = ?`, id)
 	return scanComponent(row)
 }
 
@@ -294,11 +298,15 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, repo_url, current_version, latest_version,
-		       last_seen_version, check_strategy, enabled,
-		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
-		FROM components WHERE `+where+`
-		ORDER BY updated_at DESC LIMIT ? OFFSET ?`, queryArgs...)
+		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
+		       c.last_seen_version, c.check_strategy, c.enabled,
+		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
+		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.last_security_summary, sp.last_security_checked_at
+		FROM components c
+		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
+		WHERE `+where+`
+		ORDER BY c.updated_at DESC LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -317,10 +325,14 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 
 func (s *Store) ListEnabledComponents(ctx context.Context) ([]Component, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, repo_url, current_version, latest_version,
-		       last_seen_version, check_strategy, enabled,
-		       last_check_status, last_check_error, last_checked_at, notes, created_at, updated_at
-		FROM components WHERE enabled = 1 ORDER BY name ASC`)
+		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
+		       c.last_seen_version, c.check_strategy, c.enabled,
+		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
+		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.last_security_summary, sp.last_security_checked_at
+		FROM components c
+		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
+		WHERE c.enabled = 1 ORDER BY c.name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -982,11 +994,13 @@ func scanComponent(row scanner) (*Component, error) {
 	var item Component
 	var enabled int
 	var latestVersion, lastSeenVersion, lastCheckStatus, lastCheckError, notes, repoURL sql.NullString
-	var lastCheckedAt sql.NullTime
+	var securityCommitSHA, securityStatus, securityReason, securitySummary sql.NullString
+	var lastCheckedAt, securityCheckedAt sql.NullTime
 	if err := row.Scan(
 		&item.ID, &item.Name, &repoURL, &item.CurrentVersion, &latestVersion,
 		&lastSeenVersion, &item.CheckStrategy, &enabled,
 		&lastCheckStatus, &lastCheckError, &lastCheckedAt, &notes, &item.CreatedAt, &item.UpdatedAt,
+		&securityCommitSHA, &securityStatus, &securityReason, &securitySummary, &securityCheckedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -997,6 +1011,11 @@ func scanComponent(row scanner) (*Component, error) {
 	item.LastCheckStatus = lastCheckStatus.String
 	item.LastCheckError = lastCheckError.String
 	item.LastCheckedAt = nullTimePtr(lastCheckedAt)
+	item.SecurityCommitSHA = securityCommitSHA.String
+	item.SecurityStatus = securityStatus.String
+	item.SecurityReason = securityReason.String
+	item.SecuritySummary = securitySummary.String
+	item.SecurityCheckedAt = nullTimePtr(securityCheckedAt)
 	item.Notes = notes.String
 	return &item, nil
 }

@@ -58,6 +58,49 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at DATETIME NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS component_security_profiles (
+  component_id INTEGER PRIMARY KEY,
+  security_mode TEXT,
+  security_lookup_mode TEXT NOT NULL DEFAULT 'commit_first',
+  security_commit_sha TEXT,
+  security_package_name TEXT,
+  security_ecosystem TEXT,
+  security_aliases TEXT,
+  security_notes TEXT,
+  security_tag_pattern TEXT,
+  last_security_status TEXT,
+  last_security_reason TEXT,
+  last_security_raw_payload TEXT,
+  last_security_checked_at DATETIME,
+  last_security_summary TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS component_security_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  component_id INTEGER NOT NULL,
+  version TEXT NOT NULL,
+  commit_sha TEXT,
+  risk_type TEXT NOT NULL,
+  risk_status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  identifier TEXT,
+  package_name TEXT,
+  ecosystem TEXT,
+  affected_range TEXT,
+  fixed_version TEXT,
+  severity TEXT,
+  confidence REAL,
+  summary TEXT,
+  status_reason TEXT,
+  raw_payload TEXT,
+  evidence_url TEXT,
+  created_at DATETIME NOT NULL,
+  FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS check_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   component_id INTEGER NOT NULL,
@@ -107,6 +150,8 @@ CREATE TABLE IF NOT EXISTS system_runs (
 
 CREATE INDEX IF NOT EXISTS idx_check_records_component_id ON check_records(component_id);
 CREATE INDEX IF NOT EXISTS idx_check_records_checked_at ON check_records(checked_at);
+CREATE INDEX IF NOT EXISTS idx_component_security_records_component_id ON component_security_records(component_id);
+CREATE INDEX IF NOT EXISTS idx_component_security_records_created_at ON component_security_records(created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_records_component_id ON notification_records(component_id);
 CREATE INDEX IF NOT EXISTS idx_notification_records_created_at ON notification_records(created_at);
 `

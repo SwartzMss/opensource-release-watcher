@@ -3,20 +3,25 @@ package storage
 import "time"
 
 type Component struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	RepoURL         string     `json:"repo_url"`
-	CurrentVersion  string     `json:"current_version"`
-	LatestVersion   string     `json:"latest_version"`
-	LastSeenVersion string     `json:"last_seen_version"`
-	CheckStrategy   string     `json:"check_strategy"`
-	Enabled         bool       `json:"enabled"`
-	LastCheckStatus string     `json:"last_check_status"`
-	LastCheckError  string     `json:"last_check_error"`
-	LastCheckedAt   *time.Time `json:"last_checked_at,omitempty"`
-	Notes           string     `json:"notes"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID                int64      `json:"id"`
+	Name              string     `json:"name"`
+	RepoURL           string     `json:"repo_url"`
+	CurrentVersion    string     `json:"current_version"`
+	LatestVersion     string     `json:"latest_version"`
+	LastSeenVersion   string     `json:"last_seen_version"`
+	CheckStrategy     string     `json:"check_strategy"`
+	Enabled           bool       `json:"enabled"`
+	LastCheckStatus   string     `json:"last_check_status"`
+	LastCheckError    string     `json:"last_check_error"`
+	LastCheckedAt     *time.Time `json:"last_checked_at,omitempty"`
+	SecurityCommitSHA string     `json:"security_commit_sha,omitempty"`
+	SecurityStatus    string     `json:"security_status,omitempty"`
+	SecurityReason    string     `json:"security_reason,omitempty"`
+	SecuritySummary   string     `json:"security_summary,omitempty"`
+	SecurityCheckedAt *time.Time `json:"security_checked_at,omitempty"`
+	Notes             string     `json:"notes"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type Subscriber struct {
@@ -83,6 +88,45 @@ type SystemRun struct {
 	StartedAt    time.Time  `json:"started_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	ErrorMessage string     `json:"error_message"`
+}
+
+type ComponentSecurityProfile struct {
+	ComponentID            int64      `json:"component_id"`
+	SecurityMode           string     `json:"security_mode"`
+	SecurityLookupMode     string     `json:"security_lookup_mode"`
+	SecurityCommitSHA      string     `json:"security_commit_sha"`
+	SecurityPackageName    string     `json:"security_package_name"`
+	SecurityEcosystem      string     `json:"security_ecosystem"`
+	SecurityAliases        string     `json:"security_aliases"`
+	SecurityNotes          string     `json:"security_notes"`
+	SecurityTagPattern     string     `json:"security_tag_pattern"`
+	LastSecurityStatus     string     `json:"last_security_status"`
+	LastSecurityReason     string     `json:"last_security_reason"`
+	LastSecurityRawPayload string     `json:"last_security_raw_payload"`
+	LastSecurityCheckedAt  *time.Time `json:"last_security_checked_at,omitempty"`
+	LastSecuritySummary    string     `json:"last_security_summary"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+}
+
+type ComponentSecurityRecord struct {
+	ID            int64     `json:"id"`
+	ComponentID   int64     `json:"component_id"`
+	Version       string    `json:"version"`
+	CommitSHA     string    `json:"commit_sha,omitempty"`
+	RiskType      string    `json:"risk_type"`
+	RiskStatus    string    `json:"risk_status"`
+	Source        string    `json:"source"`
+	Identifier    string    `json:"identifier,omitempty"`
+	AffectedRange string    `json:"affected_range,omitempty"`
+	FixedVersion  string    `json:"fixed_version,omitempty"`
+	Severity      string    `json:"severity,omitempty"`
+	Confidence    float64   `json:"confidence,omitempty"`
+	Summary       string    `json:"summary,omitempty"`
+	StatusReason  string    `json:"status_reason,omitempty"`
+	RawPayload    string    `json:"raw_payload,omitempty"`
+	EvidenceURL   string    `json:"evidence_url,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type DashboardSummary struct {

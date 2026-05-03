@@ -76,6 +76,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("PUT /api/components/{id}", r.updateComponent)
 	r.mux.HandleFunc("DELETE /api/components/{id}", r.deleteComponent)
 	r.mux.HandleFunc("POST /api/components/{id}/check", r.checkComponent)
+	r.mux.HandleFunc("GET /api/components/{id}/security-records", r.listComponentSecurityRecords)
 	r.mux.HandleFunc("GET /api/components/{id}/subscribers", r.listSubscribers)
 	r.mux.HandleFunc("POST /api/components/{id}/subscribers", r.createSubscriber)
 	r.mux.HandleFunc("PUT /api/subscribers/{id}", r.updateSubscriber)
@@ -225,6 +226,19 @@ func (r *Router) getComponent(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeOK(w, item)
+}
+
+func (r *Router) listComponentSecurityRecords(w http.ResponseWriter, req *http.Request) {
+	id, ok := pathID(w, req)
+	if !ok {
+		return
+	}
+	items, err := r.service.ListComponentSecurityRecords(req.Context(), id)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeOK(w, items)
 }
 
 func (r *Router) updateComponent(w http.ResponseWriter, req *http.Request) {

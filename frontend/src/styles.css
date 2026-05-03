@@ -293,6 +293,43 @@ a {
   margin-inline-end: 0;
 }
 
+.component-security-panel {
+  margin: 0 0 16px;
+}
+
+.component-security-summary {
+  display: grid;
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.component-security-summary > div:first-child {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.component-security-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.component-security-drawer .ant-descriptions {
+  margin-bottom: 0;
+}
+
+.component-security-card .dashboard-empty {
+  margin: 0;
+}
+
+.security-commit {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 .page-header {
   align-items: center;
   flex-wrap: wrap;
@@ -321,7 +358,7 @@ a {
 }
 
 .dashboard-metric-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .dashboard-split-grid {
@@ -738,6 +775,16 @@ a {
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.mobile-item-security {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobile-item-grid .ant-tag {
+  margin-inline-end: 0;
 }
 
 .mobile-item-note {

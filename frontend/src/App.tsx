@@ -29,6 +29,7 @@ import type {
   AuthUser,
   CheckRecord,
   ComponentItem,
+  ComponentSecurityRecord,
   DashboardSummary,
   GlobalSubscriber,
   NotificationRecord,
@@ -304,6 +305,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary>();
   const [runs, setRuns] = useState<SystemRun[]>([]);
   const [checkRecords, setCheckRecords] = useState<CheckRecord[]>([]);
+  const [components, setComponents] = useState<ComponentItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
   const [loading, setLoading] = useState(false);
@@ -311,18 +313,20 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextMailStatus, nextCheckRecords, nextNotifications] = await Promise.all([
+      const [nextSummary, nextRuns, nextMailStatus, nextCheckRecords, nextNotifications, nextComponents] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
         api.mailStatus(),
         api.checkRecords({ page_size: 8, has_update: true }),
         api.notifications({ page_size: 8 }),
+        api.components({ page_size: 100 }),
       ]);
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setMailStatus(nextMailStatus);
       setCheckRecords(nextCheckRecords.items);
       setNotifications(nextNotifications.items);
+      setComponents(nextComponents.items);
     } catch (error) {
       message.error(formatErrorMessage(error));
     } finally {
@@ -338,10 +342,13 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
   const recentUpdates = checkRecords.slice(0, 5);
   const dashboardLoading = loading && !summary;
   const latestCheckAt = summary?.last_full_check_at ?? latestRun?.finished_at ?? latestRun?.started_at;
+  const securityByComponentId = new Map(components.map(item => [item.id, item]));
+  const vulnerableComponentTotal = components.filter(item => item.security_status === 'affected').length;
   const metricCards = [
     { label: '组件总数', value: summary?.component_total ?? 0, tone: 'neutral' as const },
     { label: '启用监控', value: summary?.enabled_component_total ?? 0, tone: 'neutral' as const },
     { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const },
+    { label: '漏洞检查', value: vulnerableComponentTotal, tone: 'danger' as const },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const },
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const },
   ];
@@ -396,7 +403,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       : relatedNotifications.some(notification => notification.status === 'failed')
         ? { label: '通知失败', tone: 'danger' as const }
         : { label: '未通知', tone: 'warning' as const };
-    const riskMeta = dashboardRiskMeta(item);
+    const riskMeta = dashboardSecurityMeta(securityByComponentId.get(item.component_id));
     return {
       id: item.id,
       componentName: item.component_name,
@@ -406,7 +413,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
       notificationTone: notificationMeta.tone,
       checkedAt: formatTime(item.checked_at),
       riskLabel: riskMeta.label,
-      riskTone: riskMeta.tone,
+      riskTone: riskMeta.color,
     };
   });
 
@@ -527,7 +534,7 @@ function Dashboard({ isMobile }: { isMobile: boolean }) {
                 dataIndex: 'riskLabel',
                 key: 'riskLabel',
                 width: 110,
-                render: (value, row) => <Tag color={dashboardRiskTagColor(row.riskTone)}>{value}</Tag>,
+                render: (value, row) => <Tag color={row.riskTone}>{value}</Tag>,
               },
             ]}
             dataSource={recentUpdateRows}
@@ -571,6 +578,8 @@ function Components({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<ComponentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<ComponentItem | null>(null);
+  const [securityDetail, setSecurityDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[] } | null>(null);
+  const [securityLoading, setSecurityLoading] = useState(false);
   const [form] = Form.useForm<Partial<ComponentItem>>();
 
   async function load() {
@@ -640,11 +649,31 @@ function Components({ isMobile }: { isMobile: boolean }) {
     }
   }
 
+  async function openSecurityDetail(item: ComponentItem) {
+    setSecurityLoading(true);
+    setSecurityDetail({ component: item, records: [] });
+    try {
+      const records = await api.componentSecurityRecords(item.id);
+      setSecurityDetail({ component: item, records });
+    } catch (error) {
+      message.error(formatErrorMessage(error));
+    } finally {
+      setSecurityLoading(false);
+    }
+  }
+
   const columns: ColumnsType<ComponentItem> = [
     { title: '组件', dataIndex: 'name' },
     { title: '仓库', render: (_, row) => <a href={row.repo_url} target="_blank">{row.repo_url}</a> },
     { title: '当前版本', dataIndex: 'current_version' },
     { title: '最新版本', dataIndex: 'latest_version', render: value => value || '-' },
+    {
+      title: '漏洞风险',
+      render: (_, row) => {
+        const securityMeta = componentSecurityMeta(row);
+        return <Tag color={securityMeta.color}>{securityMeta.label}</Tag>;
+      },
+    },
     { title: '启用', dataIndex: 'enabled', render: (_, row) => <Switch checked={row.enabled} onChange={checked => void toggleEnabled(row, checked)} /> },
     { title: '状态', render: (_, row) => <ComponentStatusLight status={row.last_check_status} /> },
     { title: '检查时间', dataIndex: 'last_checked_at', render: formatTime },
@@ -654,6 +683,9 @@ function Components({ isMobile }: { isMobile: boolean }) {
         <Space className="component-actions">
           <Tooltip title="检查">
             <Button aria-label="检查" className="icon-action" size="small" shape="circle" onClick={() => void check(row.id)}>↻</Button>
+          </Tooltip>
+          <Tooltip title="漏洞明细">
+            <Button aria-label="漏洞明细" className="icon-action" size="small" shape="circle" onClick={() => void openSecurityDetail(row)}>⚑</Button>
           </Tooltip>
           <Tooltip title="编辑">
             <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
@@ -679,9 +711,10 @@ function Components({ isMobile }: { isMobile: boolean }) {
           onEdit={openEditor}
           onRemove={remove}
           onToggle={toggleEnabled}
+          onSecurityDetail={openSecurityDetail}
         />
       ) : (
-        <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1100 }} size="middle" />
+        <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1220 }} size="middle" />
       )}
       <ComponentModal
         form={form}
@@ -691,6 +724,14 @@ function Components({ isMobile }: { isMobile: boolean }) {
         isMobile={isMobile}
         onCancel={() => setEditing(null)}
         onFinish={saveComponent}
+      />
+      <ComponentSecurityDrawer
+        open={securityDetail !== null}
+        loading={securityLoading}
+        component={securityDetail?.component ?? null}
+        records={securityDetail?.records ?? []}
+        isMobile={isMobile}
+        onClose={() => setSecurityDetail(null)}
       />
     </section>
   );
@@ -1367,6 +1408,31 @@ function ComponentModal(props: {
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
           <Input placeholder="3.20.1" suffix={latestVersionLoading ? <Spin size="small" /> : undefined} />
         </Form.Item>
+        {props.isEditing && (
+          <Form.Item shouldUpdate noStyle>
+            {({ getFieldsValue }) => {
+              const values = getFieldsValue() as Partial<ComponentItem>;
+              const securityMeta = componentSecurityMeta(values);
+              const securitySummary = values.security_summary?.trim() || values.security_reason?.trim() || '暂无安全检查结果';
+              const securityCheckedAt = formatTime(values.security_checked_at);
+              return (
+                <div className="component-security-panel">
+                  <Alert
+                    type={securityMeta.alertType}
+                    showIcon
+                    message={securityMeta.label}
+                    description={
+                      <div className="component-security-summary">
+                        <div>{securitySummary}</div>
+                        <div className="component-security-meta">最近检查：{securityCheckedAt}</div>
+                      </div>
+                    }
+                  />
+                </div>
+              );
+            }}
+          </Form.Item>
+        )}
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
         </Form.Item>
@@ -1378,6 +1444,79 @@ function ComponentModal(props: {
         </Form.Item>
       </Form>
     </Modal>
+  );
+}
+
+function ComponentSecurityDrawer(props: {
+  open: boolean;
+  loading: boolean;
+  component: ComponentItem | null;
+  records: ComponentSecurityRecord[];
+  isMobile: boolean;
+  onClose: () => void;
+}) {
+  const securityMeta = componentSecurityMeta(props.component ?? undefined);
+  const summary = props.component?.security_summary?.trim()
+    || props.component?.security_reason?.trim()
+    || '暂无漏洞检查结果';
+  const checkedAt = formatTime(props.component?.security_checked_at);
+
+  return (
+    <Drawer
+      title={props.component ? `${props.component.name} 的漏洞明细` : '漏洞明细'}
+      width={props.isMobile ? '100vw' : 'min(980px, 100vw)'}
+      open={props.open}
+      onClose={props.onClose}
+      destroyOnHidden
+    >
+      {props.component ? (
+        <div className="component-security-drawer">
+          <Descriptions column={props.isMobile ? 1 : 2} bordered size="small">
+            <Descriptions.Item label="安全状态">
+              <Tag color={securityMeta.color}>{securityMeta.label}</Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="最近检查">{checkedAt}</Descriptions.Item>
+            <Descriptions.Item label="安全摘要">{summary}</Descriptions.Item>
+            <Descriptions.Item label="Commit SHA">{props.component.security_commit_sha || '-'}</Descriptions.Item>
+          </Descriptions>
+          <Card
+            className="component-security-card"
+            title="漏洞记录"
+            loading={props.loading}
+            style={{ marginTop: 16 }}
+          >
+            {props.records.length === 0 ? (
+              <DashboardEmptyState title="暂无漏洞明细" />
+            ) : (
+              <Table
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                scroll={{ x: 1100 }}
+                dataSource={props.records}
+                columns={[
+                  { title: '状态', dataIndex: 'risk_status', render: value => <Tag color={value === 'affected' ? 'red' : value === 'check_failed' ? 'orange' : 'default'}>{value === 'affected' ? '有漏洞' : value === 'check_failed' ? '检查失败' : '未识别'}</Tag> },
+                  { title: 'OSV ID', dataIndex: 'identifier', render: value => value || '-' },
+                  { title: '版本', dataIndex: 'version', width: 120 },
+                  { title: 'Commit', dataIndex: 'commit_sha', render: value => <span className="security-commit">{value || '-'}</span> },
+                  { title: '受影响范围', dataIndex: 'affected_range', render: value => value || '-' },
+                  { title: '修复版本', dataIndex: 'fixed_version', render: value => value || '-' },
+                  { title: '严重性', dataIndex: 'severity', render: value => value || '-' },
+                  { title: '说明', dataIndex: 'summary', render: value => value || '-' },
+                  { title: '原因', dataIndex: 'status_reason', render: value => value || '-' },
+                  { title: '时间', dataIndex: 'created_at', render: formatTime },
+                  {
+                    title: '证据',
+                    dataIndex: 'evidence_url',
+                    render: value => value ? <a href={value} target="_blank">{value}</a> : '-',
+                  },
+                ]}
+              />
+            )}
+          </Card>
+        </div>
+      ) : null}
+    </Drawer>
   );
 }
 
@@ -1529,6 +1668,7 @@ function MobileComponentList(props: {
   onEdit: (item: ComponentItem) => void;
   onRemove: (id: number) => void | Promise<void>;
   onToggle: (row: ComponentItem, enabled: boolean) => void | Promise<void>;
+  onSecurityDetail: (item: ComponentItem) => void | Promise<void>;
 }) {
   return (
     <div className="mobile-list">
@@ -1548,6 +1688,12 @@ function MobileComponentList(props: {
           <div className="mobile-item-grid">
             <div><span>当前版本</span><strong>{item.current_version || '-'}</strong></div>
             <div><span>最新版本</span><strong>{item.latest_version || '-'}</strong></div>
+            <div>
+              <span>漏洞风险</span>
+              <div className="mobile-item-security">
+                <Tag color={componentSecurityMeta(item).color}>{componentSecurityMeta(item).label}</Tag>
+              </div>
+            </div>
             <div><span>检查时间</span><strong>{formatTime(item.last_checked_at)}</strong></div>
           </div>
           {item.last_check_error && <div className="mobile-item-note">{item.last_check_error}</div>}
@@ -1555,6 +1701,7 @@ function MobileComponentList(props: {
             <Space wrap>
               <Switch checked={item.enabled} onChange={checked => void props.onToggle(item, checked)} />
               <Button size="small" onClick={() => void props.onCheck(item.id)}>检查</Button>
+              <Button size="small" onClick={() => void props.onSecurityDetail(item)}>漏洞</Button>
               <Button size="small" onClick={() => props.onEdit(item)}>编辑</Button>
               <Popconfirm title="删除这个组件？" onConfirm={() => void props.onRemove(item.id)}>
                 <Button size="small" danger>删除</Button>
@@ -1752,17 +1899,30 @@ function dashboardCompactTagColor(tone: 'success' | 'warning' | 'danger') {
   return 'red';
 }
 
-function dashboardRiskMeta(record: CheckRecord) {
-  const text = `${record.release_title} ${record.release_note_summary} ${record.release_note ?? ''}`.toLowerCase();
-  if (/(security|secure|cve|vuln|vulnerability|漏洞|安全修复|security fix|security issue)/.test(text)) {
-    return { label: '有风险', tone: 'danger' as const };
+function dashboardSecurityMeta(component?: ComponentItem) {
+  if (!component?.security_status) {
+    return { label: '未识别', color: 'default', alertType: 'info' as const };
   }
-  return { label: '未识别', tone: 'neutral' as const };
+  if (component.security_status === 'affected') {
+    return { label: '有漏洞', color: 'red', alertType: 'error' as const };
+  }
+  if (component.security_status === 'check_failed') {
+    return { label: '检查失败', color: 'red', alertType: 'warning' as const };
+  }
+  return { label: '未识别', color: 'default', alertType: 'info' as const };
 }
 
-function dashboardRiskTagColor(tone: 'danger' | 'neutral') {
-  if (tone === 'danger') return 'red';
-  return 'default';
+function componentSecurityMeta(component?: Partial<ComponentItem>) {
+  if (!component?.security_status) {
+    return { label: '未识别', color: 'default', alertType: 'info' as const };
+  }
+  if (component.security_status === 'affected') {
+    return { label: '有漏洞', color: 'red', alertType: 'error' as const };
+  }
+  if (component.security_status === 'check_failed') {
+    return { label: '检查失败', color: 'red', alertType: 'warning' as const };
+  }
+  return { label: '未识别', color: 'default', alertType: 'info' as const };
 }
 
 function emptyComponent(): ComponentItem {
