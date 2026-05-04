@@ -17,6 +17,8 @@ type Store struct {
 	db *sql.DB
 }
 
+const checkRecordRetentionLimit = 500
+
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
@@ -685,7 +687,17 @@ func (s *Store) CreateCheckRecord(ctx context.Context, record *CheckRecord) erro
 	if record.CheckedAt.IsZero() {
 		record.CheckedAt = time.Now().UTC()
 	}
-	result, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO check_records (
 			component_id, source, previous_version, latest_version, release_title, release_url,
 			release_published_at, release_note, release_note_summary, has_update, status, error_message, checked_at
@@ -697,7 +709,27 @@ func (s *Store) CreateCheckRecord(ctx context.Context, record *CheckRecord) erro
 		return err
 	}
 	record.ID, err = result.LastInsertId()
-	return err
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM check_records
+		WHERE component_id = ?
+		  AND id NOT IN (
+			SELECT id
+			FROM check_records
+			WHERE component_id = ?
+			ORDER BY checked_at DESC, id DESC
+			LIMIT ?
+		  )`, record.ComponentID, record.ComponentID, checkRecordRetentionLimit)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (s *Store) ListCheckRecords(ctx context.Context, opts ListOptions) ([]CheckRecord, int, error) {
