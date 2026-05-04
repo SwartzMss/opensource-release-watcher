@@ -42,7 +42,7 @@ func NewClient(token string) *Client {
 	return &Client{
 		token: token,
 		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: 30 * time.Second,
 		},
 		tagsCache:     map[string]repoTagsCache{},
 		releasesCache: map[string]repoReleasesCache{},

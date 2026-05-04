@@ -9,24 +9,13 @@ import (
 
 func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID int64) ([]ComponentSecurityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		WITH ranked AS (
-			SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
-			       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
-			       rs.raw_payload, rs.evidence_url, rs.created_at,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
-			           ORDER BY rs.created_at DESC, rs.id DESC
-			       ) AS rn
-			FROM component_security_records rs
-			JOIN components c ON c.id = rs.component_id
-			WHERE rs.component_id = ?
-		)
-		SELECT id, component_id, component_name, version, commit_sha, risk_type, risk_status, source, identifier,
-		       affected_range, fixed_version, severity, confidence, summary, status_reason,
-		       raw_payload, evidence_url, created_at
-		FROM ranked
-		WHERE rn = 1
-		ORDER BY created_at DESC, id DESC`, componentID)
+		SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
+		       rs.raw_payload, rs.evidence_url, rs.created_at
+		FROM component_security_records rs
+		JOIN components c ON c.id = rs.component_id
+		WHERE rs.component_id = ?
+		ORDER BY rs.created_at DESC, rs.id DESC`, componentID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,39 +63,21 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	where := strings.Join(clauses, " AND ")
 	var total int
 	if err := s.db.QueryRowContext(ctx, `
-		WITH ranked AS (
-			SELECT rs.id, rs.component_id, rs.risk_status, rs.source, rs.identifier,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
-			           ORDER BY rs.created_at DESC, rs.id DESC
-			       ) AS rn
-			FROM component_security_records rs
-			WHERE `+where+`
-		)
-		SELECT COUNT(*) FROM ranked WHERE rn = 1`, args...).Scan(&total); err != nil {
+		SELECT COUNT(*)
+		FROM component_security_records rs
+		WHERE `+where+``, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		WITH ranked AS (
-			SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
-			       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
-			       rs.raw_payload, rs.evidence_url, rs.created_at,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
-			           ORDER BY rs.created_at DESC, rs.id DESC
-			       ) AS rn
-			FROM component_security_records rs
-			JOIN components c ON c.id = rs.component_id
-			WHERE `+where+`
-		)
-		SELECT id, component_id, component_name, version, commit_sha, risk_type, risk_status, source, identifier,
-		       affected_range, fixed_version, severity, confidence, summary, status_reason,
-		       raw_payload, evidence_url, created_at
-		FROM ranked
-		WHERE rn = 1
-		ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, queryArgs...)
+		SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
+		       rs.raw_payload, rs.evidence_url, rs.created_at
+		FROM component_security_records rs
+		JOIN components c ON c.id = rs.component_id
+		WHERE `+where+`
+		ORDER BY rs.created_at DESC, rs.id DESC LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -245,6 +216,10 @@ func (s *Store) SaveComponentSecurityState(ctx context.Context, profile Componen
 		profile.CreatedAt, profile.UpdatedAt,
 	)
 	if err != nil {
+		commitErr = err
+		return commitErr
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM component_security_records WHERE component_id = ?`, profile.ComponentID); err != nil {
 		commitErr = err
 		return commitErr
 	}

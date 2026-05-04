@@ -125,11 +125,12 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 	profile.LastSecurityReason = "当前 commit 命中 OSV 漏洞记录"
 	profile.LastSecuritySummary = firstSummary(result.Vulns)
 	records := make([]storage.ComponentSecurityRecord, 0, len(result.Vulns))
-	fixedVersions := make([]string, 0, len(result.Vulns))
+	suggestedVersions := make([]string, 0, len(result.Vulns))
 	for _, vuln := range dedupeVulns(result.Vulns) {
-		fixedVersion := strings.TrimSpace(firstFixedVersion(vuln))
-		if fixedVersion != "" {
-			fixedVersions = append(fixedVersions, fixedVersion)
+		vulnFixedVersions := fixedVersionsForVuln(vuln)
+		vulnSuggestedVersion := c.resolveSuggestedVersion(ctx, component.RepoURL, component.CurrentVersion, vulnFixedVersions)
+		if vulnSuggestedVersion != "" {
+			suggestedVersions = append(suggestedVersions, vulnSuggestedVersion)
 		}
 		record := securityRecord(
 			component.ID,
@@ -139,7 +140,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 			"当前 commit 命中 OSV 漏洞记录",
 			vuln.ID,
 			affectedRange(vuln),
-			fixedVersion,
+			vulnSuggestedVersion,
 			firstSeverity(vuln),
 			1.0,
 			summaryText(vuln),
@@ -148,7 +149,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 		)
 		records = append(records, record)
 	}
-	profile.SecuritySuggestedVersion = c.resolveSuggestedVersion(ctx, component.RepoURL, component.CurrentVersion, fixedVersions)
+	profile.SecuritySuggestedVersion = highestVersion(suggestedVersions)
 	log.Printf("security osv query finished component_id=%d commit=%s vulns=%d status=affected", component.ID, commitSHA, len(records))
 	return &Report{Profile: profile, Records: records}, nil
 }
@@ -313,17 +314,31 @@ func affectedRange(vuln osv.Vulnerability) string {
 	return strings.Join(parts, "; ")
 }
 
-func firstFixedVersion(vuln osv.Vulnerability) string {
+func fixedVersionsForVuln(vuln osv.Vulnerability) []string {
+	values := make([]string, 0)
 	for _, affected := range vuln.Affected {
 		for _, rng := range affected.Ranges {
 			for _, event := range rng.Events {
 				if event.Fixed != "" {
-					return event.Fixed
+					values = append(values, strings.TrimSpace(event.Fixed))
 				}
 			}
 		}
 	}
-	return ""
+	return dedupeStrings(values)
+}
+
+func highestVersion(values []string) string {
+	best := ""
+	for _, value := range dedupeStrings(values) {
+		if value == "" {
+			continue
+		}
+		if best == "" || version.IsNewer(value, best) {
+			best = value
+		}
+	}
+	return best
 }
 
 func firstSeverity(vuln osv.Vulnerability) string {

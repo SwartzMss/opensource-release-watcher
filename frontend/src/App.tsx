@@ -827,7 +827,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               </div>
               <div className="mobile-item-grid">
                 <div><span>检查版本</span><strong>{row.component.current_version || '-'}</strong></div>
-                <div><span>建议升级至</span><strong>{row.component.security_suggested_version || '-'}</strong></div>
+                <div><span>建议升级至</span><strong>{displaySecurityVersion(row.component.security_suggested_version)}</strong></div>
                 <div><span>说明</span><strong>{row.component.security_summary || row.component.security_reason || '-'}</strong></div>
               </div>
               {row.vulnerabilityIds.length > 0 && (
@@ -874,7 +874,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               title: '建议升级至',
               dataIndex: 'componentRecords',
               width: 160,
-              render: (_, row) => row.component.security_suggested_version || '-',
+              render: (_, row) => displaySecurityVersion(row.component.security_suggested_version),
             },
             {
               title: '说明',
@@ -908,7 +908,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             </Descriptions>
             <Card className="component-security-card" title="漏洞编号" style={{ marginTop: 16 }}>
               {detail.records.filter(item => item.risk_status === 'affected').length === 0 ? (
-                <DashboardEmptyState title="暂无漏洞记录" />
+                <DashboardEmptyState title="暂无最新漏洞结果" />
               ) : (
                 <div className="security-id-list">
                   {detail.records.filter(item => item.risk_status === 'affected').map(item => (
@@ -931,19 +931,16 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               return (
                 <Card className="component-security-card" title="漏洞信息" style={{ marginTop: 16 }}>
                   {!selectedRecord ? (
-                    <DashboardEmptyState title="暂无漏洞信息" />
+                    <DashboardEmptyState title="暂无最新漏洞信息" />
                   ) : (
                     <div className="security-selected-record">
                       <Descriptions column={isMobile ? 1 : 2} bordered size="small">
                         <Descriptions.Item label="严重性">
                           <span className="security-severity-display">
                             <strong>{securitySeverityLabel(selectedRecord.severity)}</strong>
-                            {securitySeverityDetails(selectedRecord.severity).length > 0 && (
-                              <span>{securitySeverityDetails(selectedRecord.severity)}</span>
-                            )}
                           </span>
                         </Descriptions.Item>
-                        <Descriptions.Item label="建议升级至">{detail.component.security_suggested_version || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="建议升级至">{displaySecurityVersion(selectedRecord.fixed_version)}</Descriptions.Item>
                         <Descriptions.Item label="说明">{selectedRecord.summary || '-'}</Descriptions.Item>
                         <Descriptions.Item label="证据">{selectedRecord.evidence_url ? <a href={selectedRecord.evidence_url} target="_blank" rel="noreferrer">{selectedRecord.evidence_url}</a> : '-'}</Descriptions.Item>
                       </Descriptions>
@@ -2028,6 +2025,13 @@ function formatTime(value?: string) {
   return new Date(value).toLocaleString();
 }
 
+function displaySecurityVersion(value?: string) {
+  const normalized = (value || '').trim();
+  if (!normalized) return '-';
+  if (/^[0-9a-f]{40}$/i.test(normalized)) return '-';
+  return normalized;
+}
+
 function formatClock(value?: string) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-CN', {
@@ -2112,17 +2116,10 @@ function securitySeverityLabel(value?: string) {
   return value;
 }
 
-function securitySeverityDetails(value?: string) {
-  if (!value) return '';
-  const parsed = parseCvssVector(value);
-  if (parsed.summary) return parsed.summary;
-  return '';
-}
-
-function parseCvssVector(value: string): { label: string; summary: string } {
+function parseCvssVector(value: string): { label: string } {
   const vector = value.trim();
   if (!vector.toLowerCase().startsWith('cvss:')) {
-    return { label: '', summary: '' };
+    return { label: '' };
   }
 
   const metrics = new Map<string, string>();
@@ -2133,48 +2130,75 @@ function parseCvssVector(value: string): { label: string; summary: string } {
     }
   });
 
-  const label = metricLabelFromCvss(metrics);
-  const parts: string[] = [];
-
-  const attack = metrics.get('AV');
-  if (attack === 'N') parts.push('网络可达');
-  else if (attack === 'A') parts.push('邻近网络可达');
-  else if (attack === 'L') parts.push('本地可达');
-  else if (attack === 'P') parts.push('物理访问');
-
-  const complexity = metrics.get('AC');
-  if (complexity === 'L') parts.push('低复杂度');
-  else if (complexity === 'H') parts.push('高复杂度');
-
-  const privileges = metrics.get('PR');
-  if (privileges === 'N') parts.push('无需权限');
-  else if (privileges === 'L') parts.push('低权限');
-  else if (privileges === 'H') parts.push('高权限');
-
-  const interaction = metrics.get('UI');
-  if (interaction === 'N') parts.push('无需交互');
-  else if (interaction === 'R') parts.push('需要交互');
-
-  const impacts = [
-    metrics.get('C') === 'H' ? '机密性高影响' : metrics.get('C') === 'L' ? '机密性低影响' : '',
-    metrics.get('I') === 'H' ? '完整性高影响' : metrics.get('I') === 'L' ? '完整性低影响' : '',
-    metrics.get('A') === 'H' ? '可用性高影响' : metrics.get('A') === 'L' ? '可用性低影响' : '',
-  ].filter(Boolean);
-  parts.push(...impacts);
-
-  return { label, summary: parts.join('，') };
+  const score = cvssV31BaseScore(metrics);
+  const label = cvssScoreLabel(score);
+  return { label };
 }
 
-function metricLabelFromCvss(metrics: Map<string, string>) {
-  const impact = metrics.get('A');
-  const integrity = metrics.get('I');
-  const confidentiality = metrics.get('C');
-  const impactScore = [confidentiality, integrity, impact].filter(value => value && value !== 'N').length;
-
-  if (impactScore >= 3 || impact === 'H' || integrity === 'H' || confidentiality === 'H') return '严重';
-  if (impactScore === 2 || impact === 'L' || integrity === 'L' || confidentiality === 'L') return '高';
-  if (impactScore === 1) return '中';
+function cvssScoreLabel(score: number) {
+  if (!Number.isFinite(score) || score <= 0) return '低';
+  if (score >= 9.0) return '严重';
+  if (score >= 7.0) return '高';
+  if (score >= 4.0) return '中';
   return '低';
+}
+
+function cvssV31BaseScore(metrics: Map<string, string>) {
+  const av = cvssMetricValue(metrics.get('AV'), {
+    N: 0.85,
+    A: 0.62,
+    L: 0.55,
+    P: 0.2,
+  });
+  const ac = cvssMetricValue(metrics.get('AC'), {
+    L: 0.77,
+    H: 0.44,
+  });
+  const scope = metrics.get('S') === 'C' ? 'C' : 'U';
+  const pr = cvssMetricValue(metrics.get('PR'), scope === 'C'
+    ? { N: 0.85, L: 0.68, H: 0.5 }
+    : { N: 0.85, L: 0.62, H: 0.27 });
+  const ui = cvssMetricValue(metrics.get('UI'), {
+    N: 0.85,
+    R: 0.62,
+  });
+  const c = cvssMetricValue(metrics.get('C'), {
+    N: 0,
+    L: 0.22,
+    H: 0.56,
+  });
+  const i = cvssMetricValue(metrics.get('I'), {
+    N: 0,
+    L: 0.22,
+    H: 0.56,
+  });
+  const a = cvssMetricValue(metrics.get('A'), {
+    N: 0,
+    L: 0.22,
+    H: 0.56,
+  });
+
+  if (!av || !ac || !pr || !ui) return 0;
+
+  const exploitability = 8.22 * av * ac * pr * ui;
+  const iscBase = 1 - ((1 - c) * (1 - i) * (1 - a));
+  const impact = scope === 'C'
+    ? 7.52 * (iscBase - 0.029) - 3.25 * Math.pow(iscBase - 0.02, 15)
+    : 6.42 * iscBase;
+  if (impact <= 0) return 0;
+  const baseScore = scope === 'C'
+    ? roundUp1(Math.min(1.08 * (impact + exploitability), 10))
+    : roundUp1(Math.min(impact + exploitability, 10));
+  return baseScore;
+}
+
+function cvssMetricValue(metric: string | undefined, mapping: Record<string, number>) {
+  if (!metric) return 0;
+  return mapping[metric] ?? 0;
+}
+
+function roundUp1(value: number) {
+  return Math.ceil(value * 10) / 10;
 }
 
 function emptyComponent(): ComponentItem {
