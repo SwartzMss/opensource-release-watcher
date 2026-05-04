@@ -10,3 +10,4 @@ frontend/dist/
 data/
 *.db
 *.db-*
+log/

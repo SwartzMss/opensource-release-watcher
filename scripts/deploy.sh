@@ -5,9 +5,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 FRONTEND_BUILD="$ROOT/frontend/dist"
 BIN_PATH="$ROOT/bin/opensource-release-watcher-server"
+LOG_DIR="$ROOT/log"
+LOG_FILE="$LOG_DIR/server.log"
 STATIC_DEST="${STATIC_DEST:-/var/www/opensource-release-watcher}"
 SERVICE_NAME="${SERVICE_NAME:-opensource-release-watcher}"
 BACKEND_UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
+LOGROTATE_PATH="/etc/logrotate.d/${SERVICE_NAME}"
 ORIG_USER="${SUDO_USER:-$(id -un)}"
 ORIG_HOME="$(getent passwd "$ORIG_USER" | cut -d: -f6)"
 
@@ -164,6 +167,10 @@ prepare_runtime_dirs() {
   db_dir="$(dirname "$DB_PATH")"
   mkdir -p "$db_dir"
   chown "$SERVICE_USER:$SERVICE_GROUP" "$db_dir"
+
+  mkdir -p "$LOG_DIR"
+  touch "$LOG_FILE"
+  chown "$SERVICE_USER:$SERVICE_GROUP" "$LOG_DIR" "$LOG_FILE"
 }
 
 read_nginx_vars() {
@@ -231,6 +238,21 @@ EOF
   ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 }
 
+configure_logrotate() {
+  tee "$LOGROTATE_PATH" >/dev/null <<EOF
+$LOG_FILE {
+    size 10M
+    rotate 7
+    missingok
+    compress
+    delaycompress
+    notifempty
+    create 0640 $SERVICE_USER $SERVICE_GROUP
+    copytruncate
+}
+EOF
+}
+
 write_unit_files() {
   if [[ ! -x "$BIN_PATH" ]]; then
     echo "server binary not found at $BIN_PATH; run build first" >&2
@@ -249,6 +271,8 @@ Environment="DB_PATH=$DB_PATH"
 EnvironmentFile=-$ENV_FILE
 WorkingDirectory=$ROOT
 ExecStart=$BIN_PATH
+StandardOutput=append:$LOG_FILE
+StandardError=append:$LOG_FILE
 Restart=on-failure
 RestartSec=3
 User=$SERVICE_USER
@@ -291,6 +315,10 @@ remove_nginx_config() {
   systemctl reload "${NGINX_SERVICE}.service" >/dev/null 2>&1 || true
 }
 
+remove_logrotate_config() {
+  rm -f "$LOGROTATE_PATH"
+}
+
 uninstall() {
   echo "Stopping services..."
   stop_services
@@ -298,6 +326,8 @@ uninstall() {
   remove_systemd_unit
   echo "Removing nginx config..."
   remove_nginx_config
+  echo "Removing logrotate config..."
+  remove_logrotate_config
   if [[ -d "$STATIC_DEST" ]]; then
     echo "Removing static assets at $STATIC_DEST"
     rm -rf "$STATIC_DEST"
@@ -314,6 +344,7 @@ case "$ACTION" in
     build
     write_unit_files
     configure_nginx
+    configure_logrotate
     prepare_runtime_dirs
     start_services
     reload_nginx
@@ -325,6 +356,7 @@ case "$ACTION" in
     build
     write_unit_files
     configure_nginx
+    configure_logrotate
     prepare_runtime_dirs
     start_services
     reload_nginx
@@ -338,6 +370,7 @@ case "$ACTION" in
     build
     write_unit_files
     configure_nginx
+    configure_logrotate
     prepare_runtime_dirs
     start_services
     reload_nginx

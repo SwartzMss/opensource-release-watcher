@@ -5,18 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"opensource-release-watcher/backend/internal/version"
 )
 
 type Client struct {
-	token      string
-	httpClient *http.Client
+	token         string
+	httpClient    *http.Client
+	mu            sync.Mutex
+	tagsCache     map[string]repoTagsCache
+	releasesCache map[string]repoReleasesCache
 }
 
 type ReleaseInfo struct {
@@ -31,6 +36,7 @@ type ReleaseInfo struct {
 const historyPageSize = 100
 const githubRetryAttempts = 3
 const githubRetryDelay = 10 * time.Second
+const githubHistoryCacheTTL = 30 * time.Minute
 
 func NewClient(token string) *Client {
 	return &Client{
@@ -38,7 +44,19 @@ func NewClient(token string) *Client {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		tagsCache:     map[string]repoTagsCache{},
+		releasesCache: map[string]repoReleasesCache{},
 	}
+}
+
+type repoTagsCache struct {
+	loadedAt time.Time
+	tags     []tagPayload
+}
+
+type repoReleasesCache struct {
+	loadedAt time.Time
+	releases []releasePayload
 }
 
 func (c *Client) LatestRelease(ctx context.Context, owner, repo string) (*ReleaseInfo, error) {
@@ -80,6 +98,9 @@ type tagPayload struct {
 }
 
 func (c *Client) listReleases(ctx context.Context, owner, repo string) ([]releasePayload, error) {
+	if cached, ok := c.getCachedReleases(owner, repo); ok {
+		return cached, nil
+	}
 	releases := make([]releasePayload, 0)
 	for page := 1; ; page++ {
 		var payload []releasePayload
@@ -92,12 +113,16 @@ func (c *Client) listReleases(ctx context.Context, owner, repo string) ([]releas
 		}
 		releases = append(releases, payload...)
 		if len(payload) < historyPageSize {
+			c.setCachedReleases(owner, repo, releases)
 			return releases, nil
 		}
 	}
 }
 
 func (c *Client) listTags(ctx context.Context, owner, repo string) ([]tagPayload, error) {
+	if cached, ok := c.getCachedTags(owner, repo); ok {
+		return cached, nil
+	}
 	tags := make([]tagPayload, 0)
 	for page := 1; ; page++ {
 		var payload []tagPayload
@@ -110,6 +135,7 @@ func (c *Client) listTags(ctx context.Context, owner, repo string) ([]tagPayload
 		}
 		tags = append(tags, payload...)
 		if len(payload) < historyPageSize {
+			c.setCachedTags(owner, repo, tags)
 			return tags, nil
 		}
 	}
@@ -138,18 +164,27 @@ func (c *Client) LatestTag(ctx context.Context, owner, repo string) (*ReleaseInf
 	}, nil
 }
 
-func (c *Client) FindSuggestedReleaseVersion(ctx context.Context, owner, repo, commitSHA string) (string, error) {
+func (c *Client) FindSuggestedReleaseVersion(ctx context.Context, owner, repo, currentVersion, commitSHA string) (string, error) {
 	commitSHA = strings.TrimSpace(commitSHA)
+	currentVersion = version.Normalize(currentVersion)
 	if commitSHA == "" {
 		return "", nil
-	}
-	releases, err := c.listReleases(ctx, owner, repo)
-	if err != nil {
-		return "", err
 	}
 	tags, err := c.listTags(ctx, owner, repo)
 	if err != nil {
 		return "", err
+	}
+	log.Printf("github suggested version tags loaded owner=%s repo=%s count=%d first=%s", owner, repo, len(tags), previewTags(tags, 5))
+	if exact := exactTagForCommit(commitSHA, tags, currentVersion); exact != "" {
+		log.Printf("github suggested version exact tag hit owner=%s repo=%s commit=%s tag=%s", owner, repo, commitSHA, exact)
+		return exact, nil
+	}
+	log.Printf("github suggested version exact tag miss owner=%s repo=%s commit=%s", owner, repo, commitSHA)
+
+	releases, err := c.listReleases(ctx, owner, repo)
+	if err != nil {
+		log.Printf("github releases list failed owner=%s repo=%s err=%v", owner, repo, err)
+		releases = nil
 	}
 	tagCommitByName := make(map[string]string, len(tags))
 	for _, tag := range tags {
@@ -171,23 +206,117 @@ func (c *Client) FindSuggestedReleaseVersion(ctx context.Context, owner, repo, c
 			}
 			return left.Before(right)
 		})
-		if matched, err := c.findReleaseContainingCommit(ctx, owner, repo, commitSHA, releases, tagCommitByName, false); err != nil {
+		if matched, err := c.findReleaseContainingCommit(ctx, owner, repo, currentVersion, commitSHA, releases, tagCommitByName, false); err != nil {
 			return "", err
 		} else if matched != "" {
 			return matched, nil
 		}
-		if matched, err := c.findReleaseContainingCommit(ctx, owner, repo, commitSHA, releases, tagCommitByName, true); err != nil {
+		if matched, err := c.findReleaseContainingCommit(ctx, owner, repo, currentVersion, commitSHA, releases, tagCommitByName, true); err != nil {
 			return "", err
 		} else if matched != "" {
 			return matched, nil
 		}
 	}
-	if matched, err := c.findTagContainingCommit(ctx, owner, repo, commitSHA, tags); err != nil {
+	if matched, err := c.findTagContainingCommit(ctx, owner, repo, currentVersion, commitSHA, tags); err != nil {
 		return "", err
 	} else if matched != "" {
 		return matched, nil
 	}
 	return c.FindCommitTag(ctx, owner, repo, commitSHA)
+}
+
+func exactTagForCommit(commitSHA string, tags []tagPayload, currentVersion string) string {
+	commitSHA = strings.TrimSpace(commitSHA)
+	for _, tag := range tags {
+		name := strings.TrimSpace(tag.Name)
+		if name == "" || !version.IsNewer(name, currentVersion) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(tag.Commit.SHA), commitSHA) {
+			return name
+		}
+	}
+	return ""
+}
+
+func previewTags(tags []tagPayload, limit int) string {
+	if limit <= 0 {
+		limit = 1
+	}
+	parts := make([]string, 0, limit)
+	for i, tag := range tags {
+		if i >= limit {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", strings.TrimSpace(tag.Name), strings.TrimSpace(tag.Commit.SHA)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (c *Client) getCachedTags(owner, repo string) ([]tagPayload, bool) {
+	key := repoHistoryCacheKey(owner, repo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.tagsCache[key]
+	if !ok || time.Since(entry.loadedAt) > githubHistoryCacheTTL {
+		return nil, false
+	}
+	log.Printf("github suggested version tags cache hit owner=%s repo=%s count=%d", owner, repo, len(entry.tags))
+	return cloneTags(entry.tags), true
+}
+
+func (c *Client) setCachedTags(owner, repo string, tags []tagPayload) {
+	key := repoHistoryCacheKey(owner, repo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tagsCache[key] = repoTagsCache{
+		loadedAt: time.Now().UTC(),
+		tags:     cloneTags(tags),
+	}
+}
+
+func (c *Client) getCachedReleases(owner, repo string) ([]releasePayload, bool) {
+	key := repoHistoryCacheKey(owner, repo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.releasesCache[key]
+	if !ok || time.Since(entry.loadedAt) > githubHistoryCacheTTL {
+		return nil, false
+	}
+	log.Printf("github suggested version releases cache hit owner=%s repo=%s count=%d", owner, repo, len(entry.releases))
+	return cloneReleases(entry.releases), true
+}
+
+func (c *Client) setCachedReleases(owner, repo string, releases []releasePayload) {
+	key := repoHistoryCacheKey(owner, repo)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.releasesCache[key] = repoReleasesCache{
+		loadedAt: time.Now().UTC(),
+		releases: cloneReleases(releases),
+	}
+}
+
+func repoHistoryCacheKey(owner, repo string) string {
+	return owner + "/" + repo
+}
+
+func cloneTags(tags []tagPayload) []tagPayload {
+	if len(tags) == 0 {
+		return nil
+	}
+	clone := make([]tagPayload, len(tags))
+	copy(clone, tags)
+	return clone
+}
+
+func cloneReleases(releases []releasePayload) []releasePayload {
+	if len(releases) == 0 {
+		return nil
+	}
+	clone := make([]releasePayload, len(releases))
+	copy(clone, releases)
+	return clone
 }
 
 func (c *Client) HasVersion(ctx context.Context, owner, repo, targetVersion string, releaseFirst bool) (bool, error) {
@@ -319,7 +448,7 @@ func (c *Client) FindCommitTag(ctx context.Context, owner, repo, commitSHA strin
 	}
 }
 
-func (c *Client) findReleaseContainingCommit(ctx context.Context, owner, repo, commitSHA string, releases []releasePayload, tagCommitByName map[string]string, includePrereleases bool) (string, error) {
+func (c *Client) findReleaseContainingCommit(ctx context.Context, owner, repo, currentVersion, commitSHA string, releases []releasePayload, tagCommitByName map[string]string, includePrereleases bool) (string, error) {
 	for _, rel := range releases {
 		if rel.Draft {
 			continue
@@ -332,6 +461,9 @@ func (c *Client) findReleaseContainingCommit(ctx context.Context, owner, repo, c
 			tag = strings.TrimSpace(rel.Name)
 		}
 		if tag == "" {
+			continue
+		}
+		if !version.IsNewer(tag, currentVersion) {
 			continue
 		}
 		if tagCommit, ok := tagCommitByName[version.Normalize(tag)]; ok && tagCommit != "" {
@@ -354,11 +486,14 @@ func (c *Client) findReleaseContainingCommit(ctx context.Context, owner, repo, c
 	return "", nil
 }
 
-func (c *Client) findTagContainingCommit(ctx context.Context, owner, repo, commitSHA string, tags []tagPayload) (string, error) {
+func (c *Client) findTagContainingCommit(ctx context.Context, owner, repo, currentVersion, commitSHA string, tags []tagPayload) (string, error) {
 	matches := make([]string, 0)
 	for _, tag := range tags {
 		name := strings.TrimSpace(tag.Name)
 		if name == "" {
+			continue
+		}
+		if !version.IsNewer(name, currentVersion) {
 			continue
 		}
 		tagSHA := strings.TrimSpace(tag.Commit.SHA)
@@ -423,6 +558,7 @@ func containsCandidate(candidates map[string]struct{}, value string) bool {
 func (c *Client) get(ctx context.Context, url string, out any) error {
 	var lastErr error
 	for attempt := 1; attempt <= githubRetryAttempts; attempt++ {
+		log.Printf("github api request started attempt=%d url=%s auth=%t", attempt, url, c.token != "")
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return err
@@ -434,19 +570,24 @@ func (c *Client) get(ctx context.Context, url string, out any) error {
 		}
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			log.Printf("github api request failed attempt=%d url=%s err=%v", attempt, url, err)
 			lastErr = err
 		} else {
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 8192))
+			body, readErr := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
+			log.Printf("github api response attempt=%d url=%s status=%s body_bytes=%d", attempt, url, resp.Status, len(body))
 			if readErr != nil {
+				log.Printf("github api read body failed attempt=%d url=%s err=%v", attempt, url, readErr)
 				lastErr = readErr
 			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				if err := json.Unmarshal(body, out); err != nil {
+					log.Printf("github api decode failed attempt=%d url=%s err=%v body=%s", attempt, url, err, summarizeGitHubBody(body))
 					return err
 				}
 				return nil
 			} else {
 				lastErr = fmt.Errorf("github api %s returned %s: %s", url, resp.Status, strings.TrimSpace(string(body)))
+				log.Printf("github api non-2xx attempt=%d url=%s err=%v", attempt, url, lastErr)
 				if !shouldRetryGitHubResponse(resp.StatusCode, body) || attempt == githubRetryAttempts {
 					return lastErr
 				}
@@ -459,6 +600,17 @@ func (c *Client) get(ctx context.Context, url string, out any) error {
 		}
 	}
 	return lastErr
+}
+
+func summarizeGitHubBody(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return "<empty>"
+	}
+	if len(text) > 300 {
+		return text[:300] + "..."
+	}
+	return text
 }
 
 func shouldRetryGitHubResponse(statusCode int, body []byte) bool {

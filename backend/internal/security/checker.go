@@ -19,7 +19,7 @@ type OSVClient interface {
 type CommitResolver interface {
 	ResolveCommit(ctx context.Context, repoURL, currentVersion, tagPattern string) (string, string, error)
 	ResolveTag(ctx context.Context, repoURL, commitSHA string) (string, error)
-	ResolveSuggestedVersion(ctx context.Context, repoURL, commitSHA string) (string, error)
+	ResolveSuggestedVersion(ctx context.Context, repoURL, currentVersion, commitSHA string) (string, error)
 }
 
 type Checker struct {
@@ -148,27 +148,35 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 		)
 		records = append(records, record)
 	}
-	profile.SecuritySuggestedVersion = c.resolveSuggestedVersion(ctx, component.RepoURL, fixedVersions)
+	profile.SecuritySuggestedVersion = c.resolveSuggestedVersion(ctx, component.RepoURL, component.CurrentVersion, fixedVersions)
 	log.Printf("security osv query finished component_id=%d commit=%s vulns=%d status=affected", component.ID, commitSHA, len(records))
 	return &Report{Profile: profile, Records: records}, nil
 }
 
-func (c *Checker) resolveSuggestedVersion(ctx context.Context, repoURL string, fixedVersions []string) string {
+func (c *Checker) resolveSuggestedVersion(ctx context.Context, repoURL, currentVersion string, fixedVersions []string) string {
 	cache := map[string]string{}
 	best := ""
 	for _, fixedVersion := range dedupeStrings(fixedVersions) {
-		resolved := c.resolveFixedVersionCandidate(ctx, repoURL, fixedVersion, cache)
+		log.Printf("security resolving fixed version candidate repo=%s fixed_version=%s", repoURL, fixedVersion)
+		resolved := c.resolveFixedVersionCandidate(ctx, repoURL, currentVersion, fixedVersion, cache)
+		log.Printf("security resolved fixed version candidate repo=%s fixed_version=%s resolved=%s", repoURL, fixedVersion, resolved)
 		if resolved == "" || looksLikeCommitSHA(resolved) {
 			continue
 		}
-		if best == "" || version.IsNewer(resolved, best) {
+		if currentVersion != "" && !version.IsNewer(resolved, currentVersion) {
+			log.Printf("security suggested version candidate filtered repo=%s fixed_version=%s resolved=%s current_version=%s", repoURL, fixedVersion, resolved, currentVersion)
+			continue
+		}
+		if best == "" || version.IsNewer(best, resolved) {
 			best = resolved
+			log.Printf("security suggested version updated repo=%s fixed_version=%s selected=%s", repoURL, fixedVersion, best)
 		}
 	}
+	log.Printf("security suggested version final repo=%s selected=%s", repoURL, best)
 	return best
 }
 
-func (c *Checker) resolveFixedVersionCandidate(ctx context.Context, repoURL, fixedVersion string, cache map[string]string) string {
+func (c *Checker) resolveFixedVersionCandidate(ctx context.Context, repoURL, currentVersion, fixedVersion string, cache map[string]string) string {
 	fixedVersion = strings.TrimSpace(fixedVersion)
 	if fixedVersion == "" {
 		return ""
@@ -177,16 +185,27 @@ func (c *Checker) resolveFixedVersionCandidate(ctx context.Context, repoURL, fix
 		return normalized
 	}
 	if !looksLikeCommitSHA(fixedVersion) {
+		log.Printf("security fixed version is already a version repo=%s fixed_version=%s", repoURL, fixedVersion)
+		if currentVersion != "" && !version.IsNewer(fixedVersion, currentVersion) {
+			cache[fixedVersion] = ""
+			return ""
+		}
 		cache[fixedVersion] = fixedVersion
 		return fixedVersion
 	}
-	tag, err := c.gitrepo.ResolveSuggestedVersion(ctx, repoURL, fixedVersion)
+	tag, err := c.gitrepo.ResolveSuggestedVersion(ctx, repoURL, currentVersion, fixedVersion)
 	if err != nil {
 		log.Printf("security resolve fixed version suggestion failed repo=%s fixed_version=%s err=%v", repoURL, fixedVersion, err)
 		cache[fixedVersion] = ""
 		return ""
 	}
+	if currentVersion != "" && tag != "" && !version.IsNewer(tag, currentVersion) {
+		log.Printf("security resolved fixed version not newer than current repo=%s fixed_version=%s tag=%s current_version=%s", repoURL, fixedVersion, tag, currentVersion)
+		cache[fixedVersion] = ""
+		return ""
+	}
 	cache[fixedVersion] = tag
+	log.Printf("security resolved fixed version from commit repo=%s fixed_version=%s tag=%s", repoURL, fixedVersion, tag)
 	return tag
 }
 

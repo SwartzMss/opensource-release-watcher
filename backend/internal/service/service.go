@@ -419,7 +419,7 @@ func (s *Service) runSecuritySync(job securityJob) {
 		return
 	}
 	startedAt := time.Now().UTC()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	profile, err := s.store.GetComponentSecurityProfile(ctx, job.component.ID)

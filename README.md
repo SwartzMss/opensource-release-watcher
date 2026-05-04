@@ -364,10 +364,16 @@ sudo scripts/deploy.sh uninstall
 查看后端服务日志：
 
 ```bash
-sudo journalctl -u opensource-release-watcher.service -f
+tail -f log/server.log
 ```
 
 查看最近 100 行日志：
+
+```bash
+tail -n 100 log/server.log
+```
+
+如果需要看 systemd 服务状态，也可以用：
 
 ```bash
 sudo journalctl -u opensource-release-watcher.service -n 100 --no-pager

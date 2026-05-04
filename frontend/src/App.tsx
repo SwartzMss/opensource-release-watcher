@@ -935,8 +935,6 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
                   ) : (
                     <div className="security-selected-record">
                       <Descriptions column={isMobile ? 1 : 2} bordered size="small">
-                        <Descriptions.Item label="OSV ID">{selectedRecord.identifier || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="状态"><Tag color={securityStatusTagColor(selectedRecord.risk_status)}>{securityStatusLabel(selectedRecord.risk_status)}</Tag></Descriptions.Item>
                         <Descriptions.Item label="严重性">
                           <span className="security-severity-display">
                             <strong>{securitySeverityLabel(selectedRecord.severity)}</strong>
