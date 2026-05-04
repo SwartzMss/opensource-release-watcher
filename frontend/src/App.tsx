@@ -839,43 +839,12 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
     return (right.latestRecordAt || '').localeCompare(left.latestRecordAt || '');
   });
 
-  const securityCounts = {
-    affected: components.filter(item => item.security_status === 'affected').length,
-    failed: components.filter(item => item.security_status === 'check_failed').length,
-  };
-  const latestSecurityAt = components
-    .map(item => item.security_checked_at)
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1);
   const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
   const componentOptions = components.map(item => ({ label: item.name, value: item.id }));
 
   return (
     <section>
       <PageHeader title="漏洞检查" description="查看有漏洞和检查失败的组件。" />
-      <div className="metric-grid dashboard-metric-grid">
-        <Card
-          className={`metric dashboard-metric dashboard-metric-danger dashboard-metric-toggle${selectedIssueStatus === 'affected' ? ' dashboard-metric-active' : ''}`}
-          loading={loading && !components.length}
-          onClick={() => setSelectedIssueStatus('affected')}
-        >
-          <small>有漏洞组件</small>
-          <strong>{securityCounts.affected}</strong>
-        </Card>
-        <Card
-          className={`metric dashboard-metric dashboard-metric-danger dashboard-metric-toggle${selectedIssueStatus === 'check_failed' ? ' dashboard-metric-active' : ''}`}
-          loading={loading && !components.length}
-          onClick={() => setSelectedIssueStatus('check_failed')}
-        >
-          <small>检查失败</small>
-          <strong>{securityCounts.failed}</strong>
-        </Card>
-        <Card className="metric dashboard-metric dashboard-metric-neutral" loading={loading && !components.length}>
-          <small>最近检查</small>
-          <strong>{formatTime(latestSecurityAt)}</strong>
-        </Card>
-      </div>
       <Card className="toolbar-card">
         <div className="filter-bar-head">
           <div>
@@ -936,16 +905,18 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
           rowKey={row => String(row.component.id)}
           loading={loading}
           dataSource={rows}
+          tableLayout="fixed"
           pagination={{
             pageSize: 20,
             showSizeChanger: false,
           }}
           size="middle"
           columns={[
-            { title: '组件', dataIndex: 'component', render: (_, row) => row.component.name },
+            { title: '组件', dataIndex: 'component', width: 180, render: (_, row) => row.component.name, ellipsis: true },
             {
               title: '漏洞编号',
               dataIndex: 'vulnerabilityIds',
+              width: 260,
               render: (_, row) => (
                 selectedIssueStatus === 'affected' && row.vulnerabilityIds.length > 0 ? (
                   <Space size={[4, 4]} wrap>
@@ -955,12 +926,20 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
                 ) : '-'
               ),
             },
-            { title: '检查版本', dataIndex: 'component', render: (_, row) => row.component.current_version || '-' },
-            { title: '说明', dataIndex: 'component', render: (_, row) => row.component.security_summary || row.component.security_reason || '-' },
-            { title: '最近检查', dataIndex: 'latestRecordAt', render: value => formatTime(value) },
-            { title: '操作', render: (_, row) => <Button size="small" onClick={() => showDetail(row.component, row.componentRecords)}>详情</Button> },
+            { title: '检查版本', dataIndex: 'component', width: 120, render: (_, row) => row.component.current_version || '-' },
+            {
+              title: '说明',
+              dataIndex: 'component',
+              width: 300,
+              render: (_, row) => {
+                const text = row.component.security_summary || row.component.security_reason || '-';
+                return <span className="security-summary-cell" title={text}>{text}</span>;
+              },
+            },
+            { title: '最近检查', dataIndex: 'latestRecordAt', width: 170, render: value => formatTime(value) },
+            { title: '操作', width: 90, render: (_, row) => <Button size="small" onClick={() => showDetail(row.component, row.componentRecords)}>详情</Button> },
           ]}
-          scroll={{ x: 960 }}
+          scroll={{ x: 1170 }}
         />
       )}
       <Drawer
@@ -1009,7 +988,14 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
                       <Descriptions column={isMobile ? 1 : 2} bordered size="small">
                         <Descriptions.Item label="OSV ID">{selectedRecord.identifier || '-'}</Descriptions.Item>
                         <Descriptions.Item label="状态"><Tag color={securityStatusTagColor(selectedRecord.risk_status)}>{securityStatusLabel(selectedRecord.risk_status)}</Tag></Descriptions.Item>
-                        <Descriptions.Item label="严重性">{securitySeverityLabel(selectedRecord.severity)}</Descriptions.Item>
+                        <Descriptions.Item label="严重性">
+                          <span className="security-severity-display">
+                            <strong>{securitySeverityLabel(selectedRecord.severity)}</strong>
+                            {securitySeverityDetails(selectedRecord.severity).length > 0 && (
+                              <span>{securitySeverityDetails(selectedRecord.severity)}</span>
+                            )}
+                          </span>
+                        </Descriptions.Item>
                         <Descriptions.Item label="修复版本">{selectedRecord.fixed_version || '-'}</Descriptions.Item>
                         <Descriptions.Item label="说明">{selectedRecord.summary || '-'}</Descriptions.Item>
                         <Descriptions.Item label="证据">{selectedRecord.evidence_url ? <a href={selectedRecord.evidence_url} target="_blank" rel="noreferrer">{selectedRecord.evidence_url}</a> : '-'}</Descriptions.Item>
@@ -1803,7 +1789,7 @@ function ComponentSecurityDrawer(props: {
                   { title: 'Commit', dataIndex: 'commit_sha', render: value => <span className="security-commit">{value || '-'}</span> },
                   { title: '受影响范围', dataIndex: 'affected_range', render: value => value || '-' },
                   { title: '修复版本', dataIndex: 'fixed_version', render: value => value || '-' },
-                  { title: '严重性', dataIndex: 'severity', render: value => value || '-' },
+                  { title: '严重性', dataIndex: 'severity', render: value => <span title={value || '-'}>{securitySeverityLabel(value) || '-'}</span> },
                   { title: '说明', dataIndex: 'summary', render: value => value || '-' },
                   { title: '原因', dataIndex: 'status_reason', render: value => value || '-' },
                   { title: '时间', dataIndex: 'created_at', render: formatTime },
@@ -2247,7 +2233,76 @@ function securitySeverityLabel(value?: string) {
   if (normalized.includes('high')) return '高';
   if (normalized.includes('medium')) return '中';
   if (normalized.includes('low')) return '低';
+  if (normalized.startsWith('cvss:')) {
+    const parsed = parseCvssVector(value);
+    if (parsed.label) return parsed.label;
+  }
   return value;
+}
+
+function securitySeverityDetails(value?: string) {
+  if (!value) return '';
+  const parsed = parseCvssVector(value);
+  if (parsed.summary) return parsed.summary;
+  return '';
+}
+
+function parseCvssVector(value: string): { label: string; summary: string } {
+  const vector = value.trim();
+  if (!vector.toLowerCase().startsWith('cvss:')) {
+    return { label: '', summary: '' };
+  }
+
+  const metrics = new Map<string, string>();
+  vector.split('/').forEach(part => {
+    const [key, raw] = part.split(':', 2);
+    if (raw) {
+      metrics.set(key.toUpperCase(), raw.toUpperCase());
+    }
+  });
+
+  const label = metricLabelFromCvss(metrics);
+  const parts: string[] = [];
+
+  const attack = metrics.get('AV');
+  if (attack === 'N') parts.push('网络可达');
+  else if (attack === 'A') parts.push('邻近网络可达');
+  else if (attack === 'L') parts.push('本地可达');
+  else if (attack === 'P') parts.push('物理访问');
+
+  const complexity = metrics.get('AC');
+  if (complexity === 'L') parts.push('低复杂度');
+  else if (complexity === 'H') parts.push('高复杂度');
+
+  const privileges = metrics.get('PR');
+  if (privileges === 'N') parts.push('无需权限');
+  else if (privileges === 'L') parts.push('低权限');
+  else if (privileges === 'H') parts.push('高权限');
+
+  const interaction = metrics.get('UI');
+  if (interaction === 'N') parts.push('无需交互');
+  else if (interaction === 'R') parts.push('需要交互');
+
+  const impacts = [
+    metrics.get('C') === 'H' ? '机密性高影响' : metrics.get('C') === 'L' ? '机密性低影响' : '',
+    metrics.get('I') === 'H' ? '完整性高影响' : metrics.get('I') === 'L' ? '完整性低影响' : '',
+    metrics.get('A') === 'H' ? '可用性高影响' : metrics.get('A') === 'L' ? '可用性低影响' : '',
+  ].filter(Boolean);
+  parts.push(...impacts);
+
+  return { label, summary: parts.join('，') };
+}
+
+function metricLabelFromCvss(metrics: Map<string, string>) {
+  const impact = metrics.get('A');
+  const integrity = metrics.get('I');
+  const confidentiality = metrics.get('C');
+  const impactScore = [confidentiality, integrity, impact].filter(value => value && value !== 'N').length;
+
+  if (impactScore >= 3 || impact === 'H' || integrity === 'H' || confidentiality === 'H') return '严重';
+  if (impactScore === 2 || impact === 'L' || integrity === 'L' || confidentiality === 'L') return '高';
+  if (impactScore === 1) return '中';
+  return '低';
 }
 
 function emptyComponent(): ComponentItem {

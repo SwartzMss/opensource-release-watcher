@@ -461,6 +461,28 @@ a {
   cursor: pointer;
 }
 
+.security-summary-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.security-severity-display {
+  display: grid;
+  gap: 4px;
+}
+
+.security-severity-display strong {
+  color: var(--text-strong);
+}
+
+.security-severity-display span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .dashboard-metric-warning {
   border-top-color: var(--warning);
 }
