@@ -69,6 +69,7 @@ func (r *Router) routes() {
 	r.mux.HandleFunc("GET /api/auth/me", r.me)
 	r.mux.HandleFunc("POST /api/auth/heartbeat", r.heartbeat)
 	r.mux.HandleFunc("GET /api/dashboard/summary", r.dashboardSummary)
+	r.mux.HandleFunc("GET /api/system/status", r.systemStatus)
 	r.mux.HandleFunc("GET /api/components", r.listComponents)
 	r.mux.HandleFunc("POST /api/components", r.createComponent)
 	r.mux.HandleFunc("GET /api/components/latest-version", r.latestComponentVersion)
@@ -147,6 +148,15 @@ func (r *Router) heartbeat(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) mailAuthStatus(w http.ResponseWriter, req *http.Request) {
 	status, err := r.service.MailAuthStatus(req.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOK(w, status)
+}
+
+func (r *Router) systemStatus(w http.ResponseWriter, req *http.Request) {
+	status, err := r.service.RuntimeStatus(req.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

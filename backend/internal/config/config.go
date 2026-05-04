@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -31,6 +33,7 @@ type AuthConfig struct {
 }
 
 func Load() Config {
+	loadDotEnvFiles()
 	adminUsername := env("ADMIN_USERNAME", "admin")
 	adminPassword := env("ADMIN_PASSWORD", "admin")
 	dbPath := env("DB_PATH", "../data/watcher.db")
@@ -56,6 +59,66 @@ func Load() Config {
 			RefreshToken: os.Getenv("GRAPH_REFRESH_TOKEN"),
 		},
 	}
+}
+
+func loadDotEnvFiles() {
+	seen := map[string]struct{}{}
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if _, ok := seen[candidate]; !ok {
+			seen[candidate] = struct{}{}
+			_ = loadDotEnvFile(candidate)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return
+		}
+		dir = parent
+	}
+}
+
+func loadDotEnvFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" {
+			continue
+		}
+		if len(value) >= 2 {
+			if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) || (strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+				value = value[1 : len(value)-1]
+			}
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
 }
 
 func env(key, fallback string) string {

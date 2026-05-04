@@ -31,6 +31,7 @@ export interface ComponentItem {
   security_reason?: string;
   security_summary?: string;
   security_checked_at?: string;
+  security_suggested_version?: string;
   notes: string;
   created_at: string;
   updated_at: string;
@@ -136,6 +137,13 @@ export interface MailAuthStatus {
   configured: boolean;
   connected: boolean;
   message?: string;
+}
+
+export interface RuntimeStatus {
+  github_token_status: string;
+  github_token_message?: string;
+  proxy_status: string;
+  proxy_message?: string;
 }
 
 export interface SystemRun {

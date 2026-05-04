@@ -11,6 +11,8 @@ import (
 
 type TagCommitResolver interface {
 	FindTagCommit(ctx context.Context, owner, repo string, tagCandidates []string) (string, string, error)
+	FindCommitTag(ctx context.Context, owner, repo, commitSHA string) (string, error)
+	FindSuggestedReleaseVersion(ctx context.Context, owner, repo, commitSHA string) (string, error)
 }
 
 type Resolver struct {
@@ -31,6 +33,22 @@ func (r *Resolver) ResolveCommit(ctx context.Context, repoURL, currentVersion, t
 		return "", "", fmt.Errorf("tag candidates are required")
 	}
 	return r.github.FindTagCommit(ctx, owner, repo, candidates)
+}
+
+func (r *Resolver) ResolveTag(ctx context.Context, repoURL, commitSHA string) (string, error) {
+	owner, repo, ok := parseGitHubURL(repoURL)
+	if !ok {
+		return "", fmt.Errorf("invalid GitHub repository URL: %s", repoURL)
+	}
+	return r.github.FindCommitTag(ctx, owner, repo, commitSHA)
+}
+
+func (r *Resolver) ResolveSuggestedVersion(ctx context.Context, repoURL, commitSHA string) (string, error) {
+	owner, repo, ok := parseGitHubURL(repoURL)
+	if !ok {
+		return "", fmt.Errorf("invalid GitHub repository URL: %s", repoURL)
+	}
+	return r.github.FindSuggestedReleaseVersion(ctx, owner, repo, commitSHA)
 }
 
 func parseGitHubURL(value string) (string, string, bool) {

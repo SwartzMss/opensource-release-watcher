@@ -45,6 +45,9 @@ func (s *Store) init(ctx context.Context) error {
 	if err := s.migrateSubscriberSchema(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateSecuritySchema(ctx); err != nil {
+		return err
+	}
 	done, err := s.hasMigration(ctx, "legacy_subscribers_migrated")
 	if err != nil {
 		return err
@@ -87,6 +90,19 @@ func (s *Store) migrateSubscriberSchema(ctx context.Context) error {
 				''
 			)
 			WHERE last_notified_version = ''`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) migrateSecuritySchema(ctx context.Context) error {
+	hasColumn, err := s.hasColumn(ctx, "component_security_profiles", "security_suggested_version")
+	if err != nil {
+		return err
+	}
+	if !hasColumn {
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE component_security_profiles ADD COLUMN security_suggested_version TEXT`); err != nil {
 			return err
 		}
 	}
@@ -270,7 +286,7 @@ func (s *Store) GetComponent(ctx context.Context, id int64) (*Component, error) 
 		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
 		       c.last_seen_version, c.check_strategy, c.enabled,
 		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
-		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.security_commit_sha, sp.security_suggested_version, sp.last_security_status, sp.last_security_reason,
 		       sp.last_security_summary, sp.last_security_checked_at
 		FROM components c
 		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
@@ -301,7 +317,7 @@ func (s *Store) ListComponents(ctx context.Context, opts ListOptions) ([]Compone
 		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
 		       c.last_seen_version, c.check_strategy, c.enabled,
 		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
-		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.security_commit_sha, sp.security_suggested_version, sp.last_security_status, sp.last_security_reason,
 		       sp.last_security_summary, sp.last_security_checked_at
 		FROM components c
 		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
@@ -328,7 +344,7 @@ func (s *Store) ListEnabledComponents(ctx context.Context) ([]Component, error) 
 		SELECT c.id, c.name, c.repo_url, c.current_version, c.latest_version,
 		       c.last_seen_version, c.check_strategy, c.enabled,
 		       c.last_check_status, c.last_check_error, c.last_checked_at, c.notes, c.created_at, c.updated_at,
-		       sp.security_commit_sha, sp.last_security_status, sp.last_security_reason,
+		       sp.security_commit_sha, sp.security_suggested_version, sp.last_security_status, sp.last_security_reason,
 		       sp.last_security_summary, sp.last_security_checked_at
 		FROM components c
 		LEFT JOIN component_security_profiles sp ON sp.component_id = c.id
@@ -994,13 +1010,13 @@ func scanComponent(row scanner) (*Component, error) {
 	var item Component
 	var enabled int
 	var latestVersion, lastSeenVersion, lastCheckStatus, lastCheckError, notes, repoURL sql.NullString
-	var securityCommitSHA, securityStatus, securityReason, securitySummary sql.NullString
+	var securityCommitSHA, securitySuggestedVersion, securityStatus, securityReason, securitySummary sql.NullString
 	var lastCheckedAt, securityCheckedAt sql.NullTime
 	if err := row.Scan(
 		&item.ID, &item.Name, &repoURL, &item.CurrentVersion, &latestVersion,
 		&lastSeenVersion, &item.CheckStrategy, &enabled,
 		&lastCheckStatus, &lastCheckError, &lastCheckedAt, &notes, &item.CreatedAt, &item.UpdatedAt,
-		&securityCommitSHA, &securityStatus, &securityReason, &securitySummary, &securityCheckedAt,
+		&securityCommitSHA, &securitySuggestedVersion, &securityStatus, &securityReason, &securitySummary, &securityCheckedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -1012,6 +1028,7 @@ func scanComponent(row scanner) (*Component, error) {
 	item.LastCheckError = lastCheckError.String
 	item.LastCheckedAt = nullTimePtr(lastCheckedAt)
 	item.SecurityCommitSHA = securityCommitSHA.String
+	item.SecuritySuggestedVersion = securitySuggestedVersion.String
 	item.SecurityStatus = securityStatus.String
 	item.SecurityReason = securityReason.String
 	item.SecuritySummary = securitySummary.String

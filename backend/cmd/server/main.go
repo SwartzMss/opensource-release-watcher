@@ -26,6 +26,9 @@ func main() {
 	} else {
 		log.Printf("starting opensource-release-watcher server addr=%s db=%s check_interval=%s cwd=unknown", cfg.ServerAddr, cfg.DBPath, cfg.CheckInterval)
 	}
+	if cfg.GitHubToken == "" {
+		log.Printf("github token not configured; GitHub API requests will use anonymous rate limits")
+	}
 
 	store, err := storage.Open(cfg.DBPath)
 	if err != nil {
@@ -39,7 +42,17 @@ func main() {
 	securityChecker := security.New(gitrepoResolver, osvClient)
 	mailNotifier := notifier.NewGraphDelegatedMail(cfg.GraphMail)
 	releaseChecker := checker.New(githubClient)
-	watcherService := service.New(store, releaseChecker, securityChecker, mailNotifier, cfg.CheckInterval)
+	watcherService := service.New(
+		store,
+		releaseChecker,
+		securityChecker,
+		mailNotifier,
+		cfg.CheckInterval,
+		cfg.GitHubToken,
+		os.Getenv("HTTP_PROXY"),
+		os.Getenv("HTTPS_PROXY"),
+		os.Getenv("NO_PROXY"),
+	)
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
 	router := api.NewRouter(watcherService, cfg.Auth)

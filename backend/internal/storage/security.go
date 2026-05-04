@@ -9,13 +9,24 @@ import (
 
 func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID int64) ([]ComponentSecurityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT rs.id, rs.component_id, c.name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		WITH ranked AS (
+			SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+			       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
+			       rs.raw_payload, rs.evidence_url, rs.created_at,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
+			           ORDER BY rs.created_at DESC, rs.id DESC
+			       ) AS rn
+			FROM component_security_records rs
+			JOIN components c ON c.id = rs.component_id
+			WHERE rs.component_id = ?
+		)
+		SELECT id, component_id, component_name, version, commit_sha, risk_type, risk_status, source, identifier,
 		       affected_range, fixed_version, severity, confidence, summary, status_reason,
-		       raw_payload, evidence_url, rs.created_at
-		FROM component_security_records rs
-		JOIN components c ON c.id = rs.component_id
-		WHERE rs.component_id = ?
-		ORDER BY rs.created_at DESC, rs.id DESC`, componentID)
+		       raw_payload, evidence_url, created_at
+		FROM ranked
+		WHERE rn = 1
+		ORDER BY created_at DESC, id DESC`, componentID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,19 +73,40 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	}
 	where := strings.Join(clauses, " AND ")
 	var total int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM component_security_records rs WHERE "+where, args...).Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		WITH ranked AS (
+			SELECT rs.id, rs.component_id, rs.risk_status, rs.source, rs.identifier,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
+			           ORDER BY rs.created_at DESC, rs.id DESC
+			       ) AS rn
+			FROM component_security_records rs
+			WHERE `+where+`
+		)
+		SELECT COUNT(*) FROM ranked WHERE rn = 1`, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT rs.id, rs.component_id, c.name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
-		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
-		       rs.raw_payload, rs.evidence_url, rs.created_at
-		FROM component_security_records rs
-		JOIN components c ON c.id = rs.component_id
-		WHERE `+where+`
-		ORDER BY rs.created_at DESC, rs.id DESC LIMIT ? OFFSET ?`, queryArgs...)
+		WITH ranked AS (
+			SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+			       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
+			       rs.raw_payload, rs.evidence_url, rs.created_at,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY rs.component_id, COALESCE(rs.identifier, ''), rs.risk_status, rs.source
+			           ORDER BY rs.created_at DESC, rs.id DESC
+			       ) AS rn
+			FROM component_security_records rs
+			JOIN components c ON c.id = rs.component_id
+			WHERE `+where+`
+		)
+		SELECT id, component_id, component_name, version, commit_sha, risk_type, risk_status, source, identifier,
+		       affected_range, fixed_version, severity, confidence, summary, status_reason,
+		       raw_payload, evidence_url, created_at
+		FROM ranked
+		WHERE rn = 1
+		ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -111,19 +143,19 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 func (s *Store) GetComponentSecurityProfile(ctx context.Context, componentID int64) (*ComponentSecurityProfile, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT component_id, security_mode, security_lookup_mode, security_commit_sha,
-		       security_package_name, security_ecosystem, security_aliases, security_notes,
+		       security_suggested_version, security_package_name, security_ecosystem, security_aliases, security_notes,
 		       security_tag_pattern, last_security_status, last_security_reason,
 		       last_security_raw_payload, last_security_checked_at, last_security_summary,
 		       created_at, updated_at
 		FROM component_security_profiles
 		WHERE component_id = ?`, componentID)
 	var item ComponentSecurityProfile
-	var securityMode, securityLookupMode, securityCommitSHA, securityPackageName, securityEcosystem, securityAliases, securityNotes, securityTagPattern sql.NullString
+	var securityMode, securityLookupMode, securityCommitSHA, securitySuggestedVersion, securityPackageName, securityEcosystem, securityAliases, securityNotes, securityTagPattern sql.NullString
 	var lastSecurityStatus, lastSecurityReason, lastSecurityRawPayload, lastSecuritySummary sql.NullString
 	var lastSecurityCheckedAt sql.NullTime
 	if err := row.Scan(
 		&item.ComponentID, &securityMode, &securityLookupMode, &securityCommitSHA,
-		&securityPackageName, &securityEcosystem, &securityAliases, &securityNotes,
+		&securitySuggestedVersion, &securityPackageName, &securityEcosystem, &securityAliases, &securityNotes,
 		&securityTagPattern, &lastSecurityStatus, &lastSecurityReason,
 		&lastSecurityRawPayload, &lastSecurityCheckedAt, &lastSecuritySummary,
 		&item.CreatedAt, &item.UpdatedAt,
@@ -133,6 +165,7 @@ func (s *Store) GetComponentSecurityProfile(ctx context.Context, componentID int
 	item.SecurityMode = securityMode.String
 	item.SecurityLookupMode = securityLookupMode.String
 	item.SecurityCommitSHA = securityCommitSHA.String
+	item.SecuritySuggestedVersion = securitySuggestedVersion.String
 	item.SecurityPackageName = securityPackageName.String
 	item.SecurityEcosystem = securityEcosystem.String
 	item.SecurityAliases = securityAliases.String
@@ -150,10 +183,11 @@ func (s *Store) ClearComponentSecurityCommitCache(ctx context.Context, component
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO component_security_profiles (
-			component_id, security_lookup_mode, security_commit_sha, created_at, updated_at
-		) VALUES (?, 'commit_first', '', ?, ?)
+			component_id, security_lookup_mode, security_commit_sha, security_suggested_version, created_at, updated_at
+		) VALUES (?, 'commit_first', '', '', ?, ?)
 		ON CONFLICT(component_id) DO UPDATE SET
 			security_commit_sha = '',
+			security_suggested_version = '',
 			updated_at = excluded.updated_at`,
 		componentID, now, now,
 	)
@@ -183,15 +217,16 @@ func (s *Store) SaveComponentSecurityState(ctx context.Context, profile Componen
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO component_security_profiles (
 			component_id, security_mode, security_lookup_mode, security_commit_sha,
-			security_package_name, security_ecosystem, security_aliases, security_notes,
+			security_suggested_version, security_package_name, security_ecosystem, security_aliases, security_notes,
 			security_tag_pattern, last_security_status, last_security_reason,
 			last_security_raw_payload, last_security_checked_at, last_security_summary,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(component_id) DO UPDATE SET
 			security_mode = excluded.security_mode,
 			security_lookup_mode = excluded.security_lookup_mode,
 			security_commit_sha = excluded.security_commit_sha,
+			security_suggested_version = excluded.security_suggested_version,
 			security_package_name = excluded.security_package_name,
 			security_ecosystem = excluded.security_ecosystem,
 			security_aliases = excluded.security_aliases,
@@ -204,7 +239,7 @@ func (s *Store) SaveComponentSecurityState(ctx context.Context, profile Componen
 			last_security_summary = excluded.last_security_summary,
 			updated_at = excluded.updated_at`,
 		profile.ComponentID, nullableString(profile.SecurityMode), nullableString(profile.SecurityLookupMode), nullableString(profile.SecurityCommitSHA),
-		nullableString(profile.SecurityPackageName), nullableString(profile.SecurityEcosystem), nullableString(profile.SecurityAliases), nullableString(profile.SecurityNotes),
+		nullableString(profile.SecuritySuggestedVersion), nullableString(profile.SecurityPackageName), nullableString(profile.SecurityEcosystem), nullableString(profile.SecurityAliases), nullableString(profile.SecurityNotes),
 		nullableString(profile.SecurityTagPattern), nullableString(profile.LastSecurityStatus), nullableString(profile.LastSecurityReason),
 		nullableString(profile.LastSecurityRawPayload), profile.LastSecurityCheckedAt, nullableString(profile.LastSecuritySummary),
 		profile.CreatedAt, profile.UpdatedAt,

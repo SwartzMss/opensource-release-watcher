@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS component_security_profiles (
   security_mode TEXT,
   security_lookup_mode TEXT NOT NULL DEFAULT 'commit_first',
   security_commit_sha TEXT,
+  security_suggested_version TEXT,
   security_package_name TEXT,
   security_ecosystem TEXT,
   security_aliases TEXT,

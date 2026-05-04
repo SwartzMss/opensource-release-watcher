@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"opensource-release-watcher/backend/internal/checker"
@@ -18,17 +20,47 @@ import (
 )
 
 type Service struct {
-	store         *storage.Store
-	checker       *checker.Checker
-	security      *security.Checker
-	notifier      notifier.Notifier
-	mailAuth      notifier.StatusProvider
-	checkInterval time.Duration
+	store           *storage.Store
+	checker         *checker.Checker
+	security        *security.Checker
+	notifier        notifier.Notifier
+	mailAuth        notifier.StatusProvider
+	checkInterval   time.Duration
+	githubToken     string
+	httpProxy       string
+	httpsProxy      string
+	noProxy         string
+	securityQueue   chan securityJob
+	securityMu      sync.Mutex
+	securityQueued  map[int64]struct{}
+	securityRunning map[int64]struct{}
 }
 
-func New(store *storage.Store, checker *checker.Checker, securityChecker *security.Checker, mailer notifier.Notifier, checkInterval time.Duration) *Service {
+type securityJob struct {
+	component    storage.Component
+	forceResolve bool
+	trigger      string
+}
+
+func New(store *storage.Store, checker *checker.Checker, securityChecker *security.Checker, mailer notifier.Notifier, checkInterval time.Duration, githubToken, httpProxy, httpsProxy, noProxy string) *Service {
 	mailAuth, _ := mailer.(notifier.StatusProvider)
-	return &Service{store: store, checker: checker, security: securityChecker, notifier: mailer, mailAuth: mailAuth, checkInterval: checkInterval}
+	svc := &Service{
+		store:           store,
+		checker:         checker,
+		security:        securityChecker,
+		notifier:        mailer,
+		mailAuth:        mailAuth,
+		checkInterval:   checkInterval,
+		githubToken:     strings.TrimSpace(githubToken),
+		httpProxy:       strings.TrimSpace(httpProxy),
+		httpsProxy:      strings.TrimSpace(httpsProxy),
+		noProxy:         strings.TrimSpace(noProxy),
+		securityQueue:   make(chan securityJob, 128),
+		securityQueued:  make(map[int64]struct{}),
+		securityRunning: make(map[int64]struct{}),
+	}
+	svc.startSecurityWorkers(2)
+	return svc
 }
 
 func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) error {
@@ -42,7 +74,7 @@ func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
 		log.Printf("clear security commit cache failed component_id=%d trigger=create_component err=%v", c.ID, err)
 	}
-	s.syncSecurity(ctx, *c, true, "create_component")
+	s.enqueueSecuritySync(*c, true, "create_component")
 	return nil
 }
 
@@ -57,7 +89,7 @@ func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
 		log.Printf("clear security commit cache failed component_id=%d trigger=update_component err=%v", c.ID, err)
 	}
-	s.syncSecurity(ctx, *c, true, "update_component")
+	s.enqueueSecuritySync(*c, true, "update_component")
 	return nil
 }
 
@@ -167,7 +199,7 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 			record.ErrorMessage = err.Error()
 		}
 	}
-	s.syncSecurity(ctx, *component, false, "manual_check")
+	s.enqueueSecuritySync(*component, false, "manual_check")
 	log.Printf("check component finished id=%d status=%s has_update=%t latest=%s previous=%s", component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
 	return &record, nil
 }
@@ -203,10 +235,10 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 			if record.LatestVersion != "" {
 				_ = s.notifyUpdate(ctx, component, record)
 			}
-			s.syncSecurity(ctx, component, false, "scheduler_run")
+			s.enqueueSecuritySync(component, false, "scheduler_run")
 			continue
 		}
-		s.syncSecurity(ctx, component, false, "scheduler_run")
+		s.enqueueSecuritySync(component, false, "scheduler_run")
 		run.FailedCount++
 	}
 	run.Status = "success"
@@ -243,6 +275,70 @@ func (s *Service) MailAuthStatus(ctx context.Context) (notifier.AuthStatus, erro
 	return s.mailAuth.Status(ctx)
 }
 
+type RuntimeStatus struct {
+	GitHubTokenStatus  string `json:"github_token_status"`
+	GitHubTokenMessage string `json:"github_token_message,omitempty"`
+	ProxyStatus        string `json:"proxy_status"`
+	ProxyMessage       string `json:"proxy_message,omitempty"`
+}
+
+func (s *Service) RuntimeStatus(ctx context.Context) (RuntimeStatus, error) {
+	status := RuntimeStatus{
+		GitHubTokenStatus: "未配置",
+		ProxyStatus:       "未配置",
+	}
+	if s.hasProxyConfig() {
+		if err := probeGitHubEndpoint(ctx, "", false); err != nil {
+			status.ProxyStatus = "异常"
+			status.ProxyMessage = err.Error()
+		} else {
+			status.ProxyStatus = "正常"
+		}
+	} else {
+		status.ProxyMessage = "未配置 HTTP_PROXY / HTTPS_PROXY"
+	}
+	if s.githubToken != "" {
+		if err := probeGitHubEndpoint(ctx, s.githubToken, true); err != nil {
+			status.GitHubTokenStatus = "异常"
+			status.GitHubTokenMessage = err.Error()
+		} else {
+			status.GitHubTokenStatus = "正常"
+		}
+	} else {
+		status.GitHubTokenMessage = "GITHUB_TOKEN 未配置，GitHub API 仍会使用匿名额度"
+	}
+	return status, nil
+}
+
+func (s *Service) hasProxyConfig() bool {
+	return s.httpProxy != "" || s.httpsProxy != ""
+}
+
+func probeGitHubEndpoint(ctx context.Context, token string, authenticated bool) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/rate_limit", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "opensource-release-watcher")
+	if authenticated {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if authenticated {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		return fmt.Errorf("github token probe returned %s", resp.Status)
+	}
+	return nil
+}
+
 func (s *Service) SendTestNotification(ctx context.Context, recipient string) error {
 	recipient = strings.TrimSpace(recipient)
 	if recipient == "" {
@@ -262,46 +358,105 @@ func (s *Service) SendTestNotification(ctx context.Context, recipient string) er
 	})
 }
 
-func (s *Service) syncSecurity(ctx context.Context, component storage.Component, forceResolve bool, trigger string) {
+func (s *Service) enqueueSecuritySync(component storage.Component, forceResolve bool, trigger string) {
+	if s.security == nil {
+		return
+	}
+	job := securityJob{component: component, forceResolve: forceResolve, trigger: trigger}
+	s.securityMu.Lock()
+	if _, running := s.securityRunning[component.ID]; running {
+		s.securityMu.Unlock()
+		log.Printf("security sync skipped component_id=%d trigger=%s already running", component.ID, trigger)
+		return
+	}
+	if _, queued := s.securityQueued[component.ID]; queued {
+		s.securityMu.Unlock()
+		log.Printf("security sync skipped component_id=%d trigger=%s already queued", component.ID, trigger)
+		return
+	}
+	s.securityQueued[component.ID] = struct{}{}
+	s.securityMu.Unlock()
+
+	select {
+	case s.securityQueue <- job:
+		log.Printf("security sync queued component_id=%d trigger=%s force_resolve=%t", component.ID, trigger, forceResolve)
+	default:
+		log.Printf("security queue full component_id=%d trigger=%s, running inline", component.ID, trigger)
+		go s.executeSecurityJob(job)
+	}
+}
+
+func (s *Service) startSecurityWorkers(workerCount int) {
+	if s.security == nil || workerCount <= 0 {
+		return
+	}
+	for i := 0; i < workerCount; i++ {
+		workerID := i + 1
+		go func() {
+			log.Printf("security worker started id=%d", workerID)
+			for job := range s.securityQueue {
+				s.executeSecurityJob(job)
+			}
+		}()
+	}
+}
+
+func (s *Service) executeSecurityJob(job securityJob) {
+	s.securityMu.Lock()
+	delete(s.securityQueued, job.component.ID)
+	s.securityRunning[job.component.ID] = struct{}{}
+	s.securityMu.Unlock()
+	defer func() {
+		s.securityMu.Lock()
+		delete(s.securityRunning, job.component.ID)
+		s.securityMu.Unlock()
+	}()
+	s.runSecuritySync(job)
+}
+
+func (s *Service) runSecuritySync(job securityJob) {
 	if s.security == nil {
 		return
 	}
 	startedAt := time.Now().UTC()
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	profile, err := s.store.GetComponentSecurityProfile(ctx, component.ID)
+	profile, err := s.store.GetComponentSecurityProfile(ctx, job.component.ID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			profile = &storage.ComponentSecurityProfile{
-				ComponentID:        component.ID,
+				ComponentID:        job.component.ID,
 				SecurityLookupMode: "commit_first",
 			}
-			log.Printf("security profile missing component_id=%d trigger=%s, using defaults", component.ID, trigger)
+			log.Printf("security profile missing component_id=%d trigger=%s, using defaults", job.component.ID, job.trigger)
 		} else {
-			log.Printf("security profile load failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+			log.Printf("security profile load failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
 			return
 		}
 	}
-	if forceResolve {
+	if job.forceResolve {
 		profile.SecurityCommitSHA = ""
 	}
 	if profile.SecurityLookupMode == "" {
 		profile.SecurityLookupMode = "commit_first"
 	}
-	report, err := s.security.Check(ctx, component, *profile, forceResolve)
+	report, err := s.security.Check(ctx, job.component, *profile, job.forceResolve)
 	if err != nil {
-		log.Printf("security check failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+		log.Printf("security check failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
 		return
 	}
 	if err := s.store.SaveComponentSecurityState(ctx, report.Profile, report.Records); err != nil {
-		log.Printf("security state save failed component_id=%d trigger=%s err=%v", component.ID, trigger, err)
+		log.Printf("security state save failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
 		return
+	}
+	if report.Profile.SecuritySuggestedVersion != "" {
+		log.Printf("security suggested version component_id=%d trigger=%s version=%s", job.component.ID, job.trigger, report.Profile.SecuritySuggestedVersion)
 	}
 	log.Printf(
 		"security check persisted component_id=%d trigger=%s status=%s reason=%s commit=%s records=%d duration=%s",
-		component.ID,
-		trigger,
+		job.component.ID,
+		job.trigger,
 		report.Profile.LastSecurityStatus,
 		report.Profile.LastSecurityReason,
 		report.Profile.SecurityCommitSHA,

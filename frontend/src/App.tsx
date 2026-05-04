@@ -36,6 +36,7 @@ import type {
   MailAuthStatus,
   Subscriber,
   SystemRun,
+  RuntimeStatus,
 } from './types/domain';
 
 type PageKey = 'dashboard' | 'components' | 'security' | 'subscribers' | 'checks' | 'notifications';
@@ -335,16 +336,18 @@ function Dashboard({
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [mailStatus, setMailStatus] = useState<MailAuthStatus>();
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>();
   const [loading, setLoading] = useState(false);
   const updatesSectionRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextMailStatus, nextCheckRecords, nextNotifications, nextComponents] = await Promise.all([
+      const [nextSummary, nextRuns, nextMailStatus, nextRuntimeStatus, nextCheckRecords, nextNotifications, nextComponents] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
         api.mailStatus(),
+        api.systemStatus(),
         api.checkRecords({ page_size: 8, has_update: true }),
         api.notifications({ page_size: 8 }),
         api.components({ page_size: 100 }),
@@ -352,6 +355,7 @@ function Dashboard({
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setMailStatus(nextMailStatus);
+      setRuntimeStatus(nextRuntimeStatus);
       setCheckRecords(nextCheckRecords.items);
       setNotifications(nextNotifications.items);
       setComponents(nextComponents.items);
@@ -380,10 +384,20 @@ function Dashboard({
     { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const, onClick: openUpdatesSection },
     { label: '漏洞检查', value: vulnerableComponentTotal, tone: 'danger' as const, onClick: onOpenSecurity },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenChecks },
-    { label: '通知记录', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenNotifications },
+    { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenNotifications },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string; tone?: 'emphasis' }> = [
+    {
+      label: '代理设置',
+      value: runtimeStatus?.proxy_status ?? '待检测',
+      extra: runtimeStatus?.proxy_message || '',
+    },
+    {
+      label: 'GitHub Token',
+      value: runtimeStatus?.github_token_status ?? '待检测',
+      extra: runtimeStatus?.github_token_message ?? '',
+    },
     {
       label: '调度状态',
       value: !latestRun ? '待运行' : latestRun.status === 'running' ? '运行中' : latestRun.status === 'failed' ? '异常' : '正常',
@@ -401,20 +415,6 @@ function Dashboard({
       extra: mailStatus?.message ?? '',
     },
   ];
-
-  const alertRows: Array<{ label: string; value: string }> = [];
-  if ((summary?.last_check_failed_total ?? 0) > 0) {
-    alertRows.push({
-      label: '检查异常',
-      value: `${summary?.last_check_failed_total ?? 0} 条`,
-    });
-  }
-  if ((summary?.notification_failed_total ?? 0) > 0) {
-    alertRows.push({
-      label: '通知异常',
-      value: `${summary?.notification_failed_total ?? 0} 条`,
-    });
-  }
 
   const notificationByCheckRecordId = new Map<number, NotificationRecord[]>();
   notifications.forEach(item => {
@@ -466,58 +466,27 @@ function Dashboard({
           </Card>
         ))}
       </div>
-      <div className="dashboard-split-grid">
-        <Card
-          className="dashboard-panel"
-          title={(
-            <div className="dashboard-panel-title">
-              <span>系统概览</span>
-            </div>
-          )}
-          loading={dashboardLoading}
-        >
-          <div className="dashboard-health-list">
-            {healthRows.map(item => (
-              <div key={item.label} className={`dashboard-health-row${item.tone === 'emphasis' ? ' dashboard-health-row-emphasis' : ''}`}>
-                <div>
-                  <strong>{item.label}</strong>
-                  {item.extra ? <span>{item.extra}</span> : null}
-                </div>
-                <Tag color={dashboardTagColor(item.value)}>
-                  {item.value}
-                </Tag>
-              </div>
-            ))}
+      <Card
+        className="dashboard-panel"
+        title={(
+          <div className="dashboard-panel-title">
+            <span>系统概览</span>
           </div>
-        </Card>
-        <Card
-          className="dashboard-panel"
-          title={(
-            <div className="dashboard-panel-title">
-              <span>异常提醒</span>
+        )}
+        loading={dashboardLoading}
+      >
+        <div className="dashboard-health-grid">
+          {healthRows.map(item => (
+            <div key={item.label} className={`dashboard-health-tile${item.tone === 'emphasis' ? ' dashboard-health-tile-emphasis' : ''}`}>
+              <div className="dashboard-health-tile-head">
+                <strong>{item.label}</strong>
+                <Tag color={dashboardTagColor(item.value)}>{item.value}</Tag>
+              </div>
+              {item.extra ? <span>{item.extra}</span> : null}
             </div>
-          )}
-          loading={dashboardLoading}
-        >
-          {alertRows.length === 0 ? (
-            <DashboardEmptyState
-              title="暂无异常"
-            />
-          ) : (
-            <div className="dashboard-alert-list">
-              {alertRows.map(item => (
-                <div key={item.label} className="dashboard-alert-row">
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>最近一次检查结果</span>
-                  </div>
-                  <Tag color="red">{item.value}</Tag>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+          ))}
+        </div>
+      </Card>
       <Card
         ref={updatesSectionRef}
         className="dashboard-panel"
@@ -614,8 +583,6 @@ function Components({ isMobile }: { isMobile: boolean }) {
   const [items, setItems] = useState<ComponentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<ComponentItem | null>(null);
-  const [securityDetail, setSecurityDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[] } | null>(null);
-  const [securityLoading, setSecurityLoading] = useState(false);
   const [form] = Form.useForm<Partial<ComponentItem>>();
 
   async function load() {
@@ -685,19 +652,6 @@ function Components({ isMobile }: { isMobile: boolean }) {
     }
   }
 
-  async function openSecurityDetail(item: ComponentItem) {
-    setSecurityLoading(true);
-    setSecurityDetail({ component: item, records: [] });
-    try {
-      const records = await api.componentSecurityRecords(item.id);
-      setSecurityDetail({ component: item, records });
-    } catch (error) {
-      message.error(formatErrorMessage(error));
-    } finally {
-      setSecurityLoading(false);
-    }
-  }
-
   const columns: ColumnsType<ComponentItem> = [
     { title: '组件', dataIndex: 'name' },
     { title: '仓库', render: (_, row) => <a href={row.repo_url} target="_blank">{row.repo_url}</a> },
@@ -719,9 +673,6 @@ function Components({ isMobile }: { isMobile: boolean }) {
         <Space className="component-actions">
           <Tooltip title="检查">
             <Button aria-label="检查" className="icon-action" size="small" shape="circle" onClick={() => void check(row.id)}>↻</Button>
-          </Tooltip>
-          <Tooltip title="漏洞明细">
-            <Button aria-label="漏洞明细" className="icon-action" size="small" shape="circle" onClick={() => void openSecurityDetail(row)}>⚑</Button>
           </Tooltip>
           <Tooltip title="编辑">
             <Button aria-label="编辑" className="icon-action" size="small" shape="circle" onClick={() => openEditor(row)}>✎</Button>
@@ -747,7 +698,6 @@ function Components({ isMobile }: { isMobile: boolean }) {
           onEdit={openEditor}
           onRemove={remove}
           onToggle={toggleEnabled}
-          onSecurityDetail={openSecurityDetail}
         />
       ) : (
         <Table rowKey="id" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 10 }} scroll={{ x: 1220 }} size="middle" />
@@ -760,14 +710,6 @@ function Components({ isMobile }: { isMobile: boolean }) {
         isMobile={isMobile}
         onCancel={() => setEditing(null)}
         onFinish={saveComponent}
-      />
-      <ComponentSecurityDrawer
-        open={securityDetail !== null}
-        loading={securityLoading}
-        component={securityDetail?.component ?? null}
-        records={securityDetail?.records ?? []}
-        isMobile={isMobile}
-        onClose={() => setSecurityDetail(null)}
       />
     </section>
   );
@@ -885,6 +827,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               </div>
               <div className="mobile-item-grid">
                 <div><span>检查版本</span><strong>{row.component.current_version || '-'}</strong></div>
+                <div><span>建议升级至</span><strong>{row.component.security_suggested_version || '-'}</strong></div>
                 <div><span>说明</span><strong>{row.component.security_summary || row.component.security_reason || '-'}</strong></div>
               </div>
               {row.vulnerabilityIds.length > 0 && (
@@ -928,6 +871,12 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             },
             { title: '检查版本', dataIndex: 'component', width: 120, render: (_, row) => row.component.current_version || '-' },
             {
+              title: '建议升级至',
+              dataIndex: 'componentRecords',
+              width: 160,
+              render: (_, row) => row.component.security_suggested_version || '-',
+            },
+            {
               title: '说明',
               dataIndex: 'component',
               width: 300,
@@ -939,7 +888,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             { title: '最近检查', dataIndex: 'latestRecordAt', width: 170, render: value => formatTime(value) },
             { title: '操作', width: 90, render: (_, row) => <Button size="small" onClick={() => showDetail(row.component, row.componentRecords)}>详情</Button> },
           ]}
-          scroll={{ x: 1170 }}
+          scroll={{ x: 1330 }}
         />
       )}
       <Drawer
@@ -996,7 +945,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
                             )}
                           </span>
                         </Descriptions.Item>
-                        <Descriptions.Item label="修复版本">{selectedRecord.fixed_version || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="建议升级至">{detail.component.security_suggested_version || '-'}</Descriptions.Item>
                         <Descriptions.Item label="说明">{selectedRecord.summary || '-'}</Descriptions.Item>
                         <Descriptions.Item label="证据">{selectedRecord.evidence_url ? <a href={selectedRecord.evidence_url} target="_blank" rel="noreferrer">{selectedRecord.evidence_url}</a> : '-'}</Descriptions.Item>
                       </Descriptions>
@@ -1735,79 +1684,6 @@ function ComponentModal(props: {
   );
 }
 
-function ComponentSecurityDrawer(props: {
-  open: boolean;
-  loading: boolean;
-  component: ComponentItem | null;
-  records: ComponentSecurityRecord[];
-  isMobile: boolean;
-  onClose: () => void;
-}) {
-  const securityMeta = componentSecurityMeta(props.component ?? undefined);
-  const summary = props.component?.security_summary?.trim()
-    || props.component?.security_reason?.trim()
-    || '暂无漏洞检查结果';
-  const checkedAt = formatTime(props.component?.security_checked_at);
-
-  return (
-    <Drawer
-      title={props.component ? `${props.component.name} 的漏洞明细` : '漏洞明细'}
-      width={props.isMobile ? '100vw' : 'min(980px, 100vw)'}
-      open={props.open}
-      onClose={props.onClose}
-      destroyOnHidden
-    >
-      {props.component ? (
-        <div className="component-security-drawer">
-          <Descriptions column={props.isMobile ? 1 : 2} bordered size="small">
-            <Descriptions.Item label="安全状态">
-              <Tag color={securityMeta.color}>{securityMeta.label}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="最近检查">{checkedAt}</Descriptions.Item>
-            <Descriptions.Item label="安全摘要">{summary}</Descriptions.Item>
-            <Descriptions.Item label="Commit SHA">{props.component.security_commit_sha || '-'}</Descriptions.Item>
-          </Descriptions>
-          <Card
-            className="component-security-card"
-            title="漏洞记录"
-            loading={props.loading}
-            style={{ marginTop: 16 }}
-          >
-            {props.records.length === 0 ? (
-              <DashboardEmptyState title="暂无漏洞明细" />
-            ) : (
-              <Table
-                rowKey="id"
-                pagination={false}
-                size="middle"
-                scroll={{ x: 1100 }}
-                dataSource={props.records}
-                columns={[
-                  { title: '状态', dataIndex: 'risk_status', render: value => <Tag color={value === 'affected' ? 'red' : value === 'check_failed' ? 'orange' : 'default'}>{value === 'affected' ? '有漏洞' : value === 'check_failed' ? '检查失败' : '未识别'}</Tag> },
-                  { title: 'OSV ID', dataIndex: 'identifier', render: value => value || '-' },
-                  { title: '版本', dataIndex: 'version', width: 120 },
-                  { title: 'Commit', dataIndex: 'commit_sha', render: value => <span className="security-commit">{value || '-'}</span> },
-                  { title: '受影响范围', dataIndex: 'affected_range', render: value => value || '-' },
-                  { title: '修复版本', dataIndex: 'fixed_version', render: value => value || '-' },
-                  { title: '严重性', dataIndex: 'severity', render: value => <span title={value || '-'}>{securitySeverityLabel(value) || '-'}</span> },
-                  { title: '说明', dataIndex: 'summary', render: value => value || '-' },
-                  { title: '原因', dataIndex: 'status_reason', render: value => value || '-' },
-                  { title: '时间', dataIndex: 'created_at', render: formatTime },
-                  {
-                    title: '证据',
-                    dataIndex: 'evidence_url',
-                    render: value => value ? <a href={value} target="_blank">{value}</a> : '-',
-                  },
-                ]}
-              />
-            )}
-          </Card>
-        </div>
-      ) : null}
-    </Drawer>
-  );
-}
-
 function parseGitHubRepoName(value?: string) {
   const input = value?.trim();
   if (!input) return '';
@@ -1956,7 +1832,6 @@ function MobileComponentList(props: {
   onEdit: (item: ComponentItem) => void;
   onRemove: (id: number) => void | Promise<void>;
   onToggle: (row: ComponentItem, enabled: boolean) => void | Promise<void>;
-  onSecurityDetail: (item: ComponentItem) => void | Promise<void>;
 }) {
   return (
     <div className="mobile-list">
@@ -1989,7 +1864,6 @@ function MobileComponentList(props: {
             <Space wrap>
               <Switch checked={item.enabled} onChange={checked => void props.onToggle(item, checked)} />
               <Button size="small" onClick={() => void props.onCheck(item.id)}>检查</Button>
-              <Button size="small" onClick={() => void props.onSecurityDetail(item)}>漏洞</Button>
               <Button size="small" onClick={() => props.onEdit(item)}>编辑</Button>
               <Popconfirm title="删除这个组件？" onConfirm={() => void props.onRemove(item.id)}>
                 <Button size="small" danger>删除</Button>
@@ -2175,7 +2049,7 @@ function formatPercent(value: number | null) {
 }
 
 function dashboardTagColor(value: string) {
-  if (value === '正常' || value === '已完成' || value === 'success' || value === 'sent' || value === 'connected') return 'green';
+  if (value === '正常' || value === '已完成' || value === '已配置' || value === 'success' || value === 'sent' || value === 'connected') return 'green';
   if (value === '异常' || value === '失败' || value === 'degraded' || value === 'failed') return 'red';
   if (value === '运行中' || value === '待运行' || value === '待检测' || value === 'warning' || value === 'running') return 'blue';
   return undefined;

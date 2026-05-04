@@ -9,6 +9,7 @@ import (
 
 	"opensource-release-watcher/backend/internal/osv"
 	"opensource-release-watcher/backend/internal/storage"
+	"opensource-release-watcher/backend/internal/version"
 )
 
 type OSVClient interface {
@@ -17,6 +18,8 @@ type OSVClient interface {
 
 type CommitResolver interface {
 	ResolveCommit(ctx context.Context, repoURL, currentVersion, tagPattern string) (string, string, error)
+	ResolveTag(ctx context.Context, repoURL, commitSHA string) (string, error)
+	ResolveSuggestedVersion(ctx context.Context, repoURL, commitSHA string) (string, error)
 }
 
 type Checker struct {
@@ -73,6 +76,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 			profile.LastSecurityReason = reason
 			profile.LastSecuritySummary = reason
 			profile.LastSecurityRawPayload = ""
+			profile.SecuritySuggestedVersion = ""
 			now := time.Now().UTC()
 			profile.LastSecurityCheckedAt = &now
 			profile.UpdatedAt = now
@@ -93,6 +97,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 		profile.LastSecurityReason = reason
 		profile.LastSecuritySummary = reason
 		profile.LastSecurityRawPayload = ""
+		profile.SecuritySuggestedVersion = ""
 		profile.LastSecurityCheckedAt = &now
 		profile.UpdatedAt = now
 		record := securityRecord(component.ID, component.CurrentVersion, commitSHA, "check_failed", reason, "", "", "", "", 0, reason, "", "")
@@ -110,6 +115,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 		profile.LastSecurityStatus = "unknown"
 		profile.LastSecurityReason = reason
 		profile.LastSecuritySummary = reason
+		profile.SecuritySuggestedVersion = ""
 		record := securityRecord(component.ID, component.CurrentVersion, commitSHA, "unknown", reason, "", "", "", "", 0, reason, rawPayload, "")
 		log.Printf("security osv query finished component_id=%d commit=%s vulns=0 status=unknown", component.ID, commitSHA)
 		return &Report{Profile: profile, Records: []storage.ComponentSecurityRecord{record}}, nil
@@ -119,7 +125,12 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 	profile.LastSecurityReason = "当前 commit 命中 OSV 漏洞记录"
 	profile.LastSecuritySummary = firstSummary(result.Vulns)
 	records := make([]storage.ComponentSecurityRecord, 0, len(result.Vulns))
+	fixedVersions := make([]string, 0, len(result.Vulns))
 	for _, vuln := range dedupeVulns(result.Vulns) {
+		fixedVersion := strings.TrimSpace(firstFixedVersion(vuln))
+		if fixedVersion != "" {
+			fixedVersions = append(fixedVersions, fixedVersion)
+		}
 		record := securityRecord(
 			component.ID,
 			component.CurrentVersion,
@@ -128,7 +139,7 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 			"当前 commit 命中 OSV 漏洞记录",
 			vuln.ID,
 			affectedRange(vuln),
-			firstFixedVersion(vuln),
+			fixedVersion,
 			firstSeverity(vuln),
 			1.0,
 			summaryText(vuln),
@@ -137,8 +148,59 @@ func (c *Checker) Check(ctx context.Context, component storage.Component, profil
 		)
 		records = append(records, record)
 	}
+	profile.SecuritySuggestedVersion = c.resolveSuggestedVersion(ctx, component.RepoURL, fixedVersions)
 	log.Printf("security osv query finished component_id=%d commit=%s vulns=%d status=affected", component.ID, commitSHA, len(records))
 	return &Report{Profile: profile, Records: records}, nil
+}
+
+func (c *Checker) resolveSuggestedVersion(ctx context.Context, repoURL string, fixedVersions []string) string {
+	cache := map[string]string{}
+	best := ""
+	for _, fixedVersion := range dedupeStrings(fixedVersions) {
+		resolved := c.resolveFixedVersionCandidate(ctx, repoURL, fixedVersion, cache)
+		if resolved == "" || looksLikeCommitSHA(resolved) {
+			continue
+		}
+		if best == "" || version.IsNewer(resolved, best) {
+			best = resolved
+		}
+	}
+	return best
+}
+
+func (c *Checker) resolveFixedVersionCandidate(ctx context.Context, repoURL, fixedVersion string, cache map[string]string) string {
+	fixedVersion = strings.TrimSpace(fixedVersion)
+	if fixedVersion == "" {
+		return ""
+	}
+	if normalized, ok := cache[fixedVersion]; ok {
+		return normalized
+	}
+	if !looksLikeCommitSHA(fixedVersion) {
+		cache[fixedVersion] = fixedVersion
+		return fixedVersion
+	}
+	tag, err := c.gitrepo.ResolveSuggestedVersion(ctx, repoURL, fixedVersion)
+	if err != nil {
+		log.Printf("security resolve fixed version suggestion failed repo=%s fixed_version=%s err=%v", repoURL, fixedVersion, err)
+		cache[fixedVersion] = ""
+		return ""
+	}
+	cache[fixedVersion] = tag
+	return tag
+}
+
+func looksLikeCommitSHA(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 40 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func dedupeVulns(vulns []osv.Vulnerability) []osv.Vulnerability {
@@ -153,6 +215,23 @@ func dedupeVulns(vulns []osv.Vulnerability) []osv.Vulnerability {
 		}
 		seen[vuln.ID] = struct{}{}
 		items = append(items, vuln)
+	}
+	return items
+}
+
+func dedupeStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
 	}
 	return items
 }

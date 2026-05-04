@@ -12,6 +12,7 @@ import type {
   PageData,
   Subscriber,
   SystemRun,
+  RuntimeStatus,
 } from '../types/domain';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -55,8 +56,6 @@ export const api = {
     request<{ deleted: boolean }>(`/api/components/${id}`, { method: 'DELETE' }),
   checkComponent: (id: number) =>
     request<CheckRecord>(`/api/components/${id}/check`, { method: 'POST' }),
-  componentSecurityRecords: (id: number) =>
-    request<ComponentSecurityRecord[]>(`/api/components/${id}/security-records`),
   securityRecords: (params?: Record<string, string | number | boolean | undefined>) =>
     request<PageData<ComponentSecurityRecord>>(`/api/security-records?${query({ page: 1, page_size: 50, ...params })}`),
   runChecks: () => request('/api/checks/run', { method: 'POST' }),
@@ -99,6 +98,7 @@ export const api = {
   checkRecord: (id: number) => request<CheckRecord>(`/api/check-records/${id}`),
   notifications: (params?: Record<string, string | number | boolean | undefined>) =>
     request<PageData<NotificationRecord>>(`/api/notification-records?${query({ page: 1, page_size: 50, ...params })}`),
+  systemStatus: () => request<RuntimeStatus>('/api/system/status'),
   testNotification: (recipient: string) =>
     request<{ sent: boolean }>('/api/notification-records/test', {
       method: 'POST',
