@@ -1,345 +1,75 @@
 # opensource-release-watcher
 
-`opensource-release-watcher` 是一个用于监控开源组件版本发布的 Web 服务。
+`opensource-release-watcher` 是一个用于持续关注开源组件版本变化和已知漏洞风险的 Web 服务。
 
-它定期检查 GitHub 开源仓库的 Release、Tag，以及后续可扩展的安全更新信息；当发现组件存在新版本或重要修复时，系统会通知对应订阅人。
+它维护一份团队正在使用的开源组件清单，定期检查 GitHub Release / Tag 和 OSV 漏洞数据；当发现新版本或当前版本存在已知漏洞时，系统会给对应订阅人发送邮件提醒。
 
-## 背景
+## 项目意图
 
-团队在项目开发中通常会依赖大量开源组件，例如：
+团队依赖的开源组件通常会不定期发布新版本，用于修复 Bug、修复安全漏洞、增加功能或调整接口行为。如果完全依赖人工关注，容易出现：
 
-- protobuf
-- OpenCV
-- libevent
-- Eigen
-- zlib
-- OpenSSL
+- 新版本发布后无人感知。
+- 安全修复没有及时同步。
+- 多个项目使用不同版本，缺少统一管理。
+- 组件订阅关系不明确。
+- Release Note 和通知记录缺少留痕。
 
-这些组件会不定期发布新版本，用于修复 Bug、增加功能、修复安全漏洞，或者调整接口行为。
+本项目提供一个轻量的开源组件版本和风险感知服务，帮助团队持续跟踪组件发布、漏洞风险和通知状态。
 
-如果完全依赖人工关注，常见问题包括：
+## 核心能力
 
-- 组件发布新版本后无人感知
-- 安全修复没有及时同步
-- 多个项目使用不同版本，缺少统一管理
-- 升级动作缺少记录
-- 组件订阅关系不明确
-- Release Note 无人跟踪
+- 维护开源组件清单和当前内部使用版本。
+- 查询 GitHub Release，仓库没有 Release 时回退到 Tag。
+- 使用 OSV 查询当前版本对应 commit 的公开漏洞。
+- 将版本更新和漏洞风险聚合成一封邮件通知。
+- 支持全局订阅人和按组件订阅。
+- 避免相同组件、相同收件人重复接收相同检查结果通知。
+- 提供仪表盘、组件管理、漏洞检查、检查记录和通知记录页面。
 
-因此，本项目希望提供一个简单、可落地的机制，对开源组件版本变化进行持续监控。
+## 快速开始
 
-## 功能目标
+### 1. 准备配置
 
-### 核心能力
-
-- 维护开源组件清单
-- 定期查询组件的最新 Release
-- 当项目没有 Release 时，自动回退查询 Tag
-- 记录上一次检查到的版本
-- 避免重复发送相同检查结果通知
-- 只支持邮件订阅与邮件通知
-- 支持订阅人按模块订阅，也支持订阅全部组件
-- 支持为不同组件配置不同订阅人
-- 支持生成版本更新摘要
-- 支持 OSV 漏洞数据库查询
-- 支持版本更新和漏洞风险聚合成一封通知
-
-### 扩展方向
-
-- 支持 GitHub Security Advisory
-- 支持 Release Note 关键字分析
-- 支持通知优先级
-- 支持月度开源组件状态报告
-
-## 核心流程
-
-```text
-定时调度触发检查任务
-      ↓
-启动检查流程
-      ↓
-从数据库读取组件清单与订阅信息
-      ↓
-查询 GitHub Release
-      ↓
-如果没有 Release，则查询 Tag
-      ↓
-和本地记录的版本进行比较
-      ↓
-查询 OSV 漏洞风险
-      ↓
-聚合版本和漏洞结果
-      ↓
-版本或漏洞状态有变化
-      ↓
-生成一封聚合通知
-      ↓
-发送邮件给订阅人
-      ↓
-更新本地状态
-```
-
-## 使用场景
-
-### 1. 组件版本发布提醒
-
-当某个组件发布新版本时，系统自动通知订阅人。
-
-例如：
-
-```text
-protobuf 3.20.1 -> 3.21.0
-opencv 4.8.0 -> 4.9.0
-```
-
-### 2. 安全修复提醒
-
-当 Release Note 中包含安全相关关键字时，可以提高提醒优先级。
-
-例如：
-
-```text
-security
-CVE
-vulnerability
-fix
-patch
-```
-
-### 3. 开源组件治理
-
-团队可以通过该系统维护内部使用的组件清单，包括：
-
-- 当前使用版本
-- 最新上游版本
-- 检查时间
-- 通知记录
-- 升级状态
-
-## 数据存储
-
-组件清单、订阅人、检查状态和通知记录统一存储在 SQLite 中，由后台管理界面维护。
-
-典型数据包括：
-
-- 组件名称
-- GitHub 仓库地址
-- 当前使用版本
-- 邮件订阅人
-- 检查策略
-- 最近一次检查结果
-- 最近一次通知记录
-
-服务端只需要少量基础配置，例如 Microsoft Graph 发信参数和监听端口；组件监控数据本身不通过外部配置文件维护。
-
-## 通知示例
-
-邮件标题：
-
-```text
-[开源组件提醒] protobuf 发现新版本和安全风险
-```
-
-邮件正文：
-
-```text
-组件名称：protobuf
-仓库地址：protocolbuffers/protobuf
-当前使用版本：3.20.1
-版本检查：3.20.1 -> 3.21.0
-安全检查：发现 2 个漏洞，建议升级至 3.21.0
-发布时间：2026-xx-xx
-
-Release Note 摘要：
-- 修复若干 C++ runtime 问题
-- 改进 generated code 行为
-- 调整部分接口兼容性
-
-建议动作：
-- 结合版本更新和安全风险统一评估升级
-- 如存在安全风险，建议优先确认受影响范围
-- 详情请进入系统查看组件和漏洞信息
-```
-
-## 推荐架构
-
-推荐采用前后端分离的 Web 服务方式：
-
-```text
-Frontend (React + TypeScript + Vite + Ant Design)
-        +
-Go HTTP API Server + Scheduler + SQLite + Microsoft Graph
-```
-
-## 模块设计
-
-```text
-opensource-release-watcher/
-├── frontend/
-│   ├── src/
-│   ├── public/
-│   ├── package.json
-│   └── vite.config.ts
-├── backend/
-│   ├── cmd/
-│   │   └── server/
-│   │       └── main.go
-│   ├── internal/
-│   │   ├── github/
-│   │   ├── checker/
-│   │   ├── scheduler/
-│   │   ├── storage/
-│   │   ├── notifier/
-│   │   ├── service/
-│   │   ├── api/
-│   │   └── version/
-│   └── go.mod
-├── templates/
-│   └── release_email.md
-├── data/
-│   └── watcher.db
-└── README.md
-```
-
-## 模块说明
-
-### frontend
-
-前端管理界面，推荐使用 React + TypeScript + Vite + Ant Design。
-
-主要用于：
-
-- 组件清单管理
-- 订阅人管理
-- 检查结果展示
-- 通知记录查看
-- 手动触发检查任务
-
-### backend
-
-后端服务，负责提供 HTTP API、执行定时检查任务、保存状态以及发送通知。
-
-### github
-
-负责调用 GitHub API，查询 Release 和 Tag。
-
-### checker
-
-负责组件检查逻辑，包括：
-
-- 查询最新版本
-- 判断是否有更新
-- 解析 Release Note
-- 判断通知优先级
-
-### storage
-
-负责保存检查状态，避免重复通知。
-
-使用 SQLite 保存组件检查状态、版本记录和通知记录。
-
-### notifier
-
-负责通知发送，当前由邮件 notifier 实现。
-
-### version
-
-负责版本号比较。
-
-例如：
-
-```text
-v1.2.3 > v1.2.2
-v2.0.0 > v1.9.9
-```
-
-## 运行与部署
-
-项目脚本集中在 `scripts/` 目录。
-
-### 环境配置
-
-复制示例配置后按实际环境修改：
+复制示例配置：
 
 ```bash
 cp .env.example .env
 ```
 
-常用配置项：
+常用配置：
 
 | 配置项 | 说明 |
 | --- | --- |
 | `SERVER_ADDR` | 后端监听地址，例如 `127.0.0.1:8000` |
-| `DB_PATH` | SQLite 数据库文件路径，相对路径按启动时工作目录解析 |
-| `GITHUB_TOKEN` | GitHub API Token，可空 |
-| `CHECK_INTERVAL` | 定时检查间隔，例如 `6h` |
-| `ADMIN_USERNAME` | 登录用户名，默认 `admin` |
-| `ADMIN_PASSWORD` | 登录密码，默认 `admin` |
-| `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境应设置为随机长字符串 |
-| `SESSION_IDLE_TIMEOUT` | 会话空闲超时时间，默认 `10m`，例如 `10m` |
-| `GRAPH_*` | 个人 Outlook / Microsoft Graph 发信配置 |
-| `DOMAIN` | nginx 对外域名 |
-| `EXTERNAL_PORT` | nginx HTTPS 对外端口 |
-| `CERT_PATH` | TLS 证书路径 |
-| `KEY_PATH` | TLS 私钥路径 |
-| `CLIENT_MAX_BODY_SIZE` | nginx 请求体大小限制 |
+| `DB_PATH` | SQLite 数据库路径 |
+| `CHECK_INTERVAL` | 组件定时检查间隔，例如 `6h` |
+| `GITHUB_TOKEN` | GitHub API Token，建议配置以提高 API 限额 |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 可选代理配置 |
+| `NO_PROXY` | 不走代理的地址，例如 `localhost,127.0.0.1` |
+| `ADMIN_USERNAME` | 登录用户名 |
+| `ADMIN_PASSWORD` | 登录密码 |
+| `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境必须修改 |
+| `GRAPH_*` | Microsoft Graph 邮件发送配置 |
 
-`.env` 包含真实域名、证书路径和密钥，不应提交；仓库只提交脱敏后的 `.env.example`。
+`.env` 包含真实密钥和本机路径，不应提交到仓库。
 
-个人 Outlook / Hotmail 邮箱配置：
-
-```env
-GRAPH_CLIENT_ID=你的应用客户端 ID
-GRAPH_CLIENT_SECRET=可选，按应用注册类型填写
-GRAPH_ACCESS_TOKEN=脚本生成的 access_token
-GRAPH_REFRESH_TOKEN=脚本生成的 refresh_token
-```
-
-在 Microsoft 应用注册中启用个人 Microsoft 账户登录，添加 delegated 权限 `Mail.Send`、`User.Read`、`offline_access`，并添加重定向 URI `https://login.microsoftonline.com/common/oauth2/nativeclient`。然后运行：
-
-```bash
-python3 -m pip install selenium requests
-python3 tools/outlook_tokens.py
-```
-
-先编辑 `tools/outlook_tokens.py` 顶部的 `CLIENT_ID`，需要密钥时再填写 `CLIENT_SECRET`。脚本会打开浏览器让你登录 Outlook，并输出可写入 `.env` 的 token。`GRAPH_TENANT_ID` 和 `GRAPH_REDIRECT_URL` 不需要配置，后端默认使用 `common`，脚本固定使用 `https://login.microsoftonline.com/common/oauth2/nativeclient`。重启服务后，测试邮件和更新通知会使用这些 token 发信。
-
-默认登录账号是 `admin/admin`。生产部署前建议至少修改：
-
-```env
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=替换成强密码
-SESSION_SECRET=替换成随机长字符串
-SESSION_IDLE_TIMEOUT=10m
-```
-
-### 本地开发
+### 2. 本地开发
 
 ```bash
 scripts/deploy.sh dev
 ```
 
-默认会启动：
+默认地址：
 
-- 后端：`127.0.0.1:8000`
-- 前端：`http://127.0.0.1:5173`
+- 后端 API：`http://127.0.0.1:8000`
+- 前端页面：`http://127.0.0.1:5173`
 
-可通过环境变量覆盖：
+默认登录账号以 `.env` 为准；如果未修改示例配置，通常是 `admin/admin`。
 
-```bash
-SERVER_ADDR=127.0.0.1:18080 DEV_PORT=5174 scripts/deploy.sh dev
-```
-
-### 编译构建
+### 3. 构建
 
 ```bash
 scripts/build.sh
-```
-
-或使用统一入口：
-
-```bash
-scripts/deploy.sh build
 ```
 
 构建产物：
@@ -347,9 +77,7 @@ scripts/deploy.sh build
 - 后端二进制：`bin/opensource-release-watcher-server`
 - 前端静态资源：`frontend/dist`
 
-### 生产部署
-
-部署脚本会构建后端和前端、写入 systemd service、同步静态资源到 nginx 目录，并生成 nginx HTTPS 配置。
+### 4. 生产部署
 
 ```bash
 sudo scripts/deploy.sh start
@@ -361,67 +89,79 @@ sudo scripts/deploy.sh start
 sudo scripts/deploy.sh restart
 sudo scripts/deploy.sh stop
 sudo scripts/deploy.sh status
-sudo scripts/deploy.sh clean-static
 sudo scripts/deploy.sh uninstall
 ```
 
-`stop` 会停止后端服务并移除本项目的 nginx 站点配置，因此页面和 API 都会暂时不可访问；`uninstall` 会进一步清理系统服务、静态资源和配置。
+## 邮件通知配置
 
-查看后端服务日志：
+当前邮件发送使用个人 Outlook / Hotmail 的 Microsoft Graph delegated token。
+
+需要在 `.env` 中配置：
+
+```env
+GRAPH_CLIENT_ID=你的应用客户端 ID
+GRAPH_CLIENT_SECRET=可选，按应用注册类型填写
+GRAPH_ACCESS_TOKEN=脚本生成的 access_token
+GRAPH_REFRESH_TOKEN=脚本生成的 refresh_token
+```
+
+获取 token 的辅助脚本：
+
+```bash
+python3 -m pip install selenium requests
+python3 tools/outlook_tokens.py
+```
+
+运行前先编辑 `tools/outlook_tokens.py` 顶部的 `CLIENT_ID`，需要密钥时再填写 `CLIENT_SECRET`。Microsoft 应用注册需要 delegated 权限 `Mail.Send`、`User.Read`、`offline_access`，重定向 URI 使用：
+
+```text
+https://login.microsoftonline.com/common/oauth2/nativeclient
+```
+
+## 使用方式
+
+1. 登录后台。
+2. 在“组件管理”中新增 GitHub 组件，填写当前内部使用版本。
+3. 在“订阅人管理”中配置收件人和订阅范围。
+4. 手动检查组件，或等待定时任务自动检查。
+5. 在“漏洞检查”查看当前版本命中的 OSV 漏洞。
+6. 在“通知记录”查看邮件发送结果。
+
+## 日志
+
+后端默认写入仓库下的日志目录：
 
 ```bash
 tail -f log/server.log
-```
-
-查看最近 100 行日志：
-
-```bash
 tail -n 100 log/server.log
 ```
 
-如果需要看 systemd 服务状态，也可以用：
+如果使用 systemd 部署，也可以查看服务日志：
 
 ```bash
 sudo journalctl -u opensource-release-watcher.service -n 100 --no-pager
 ```
 
-查看 nginx 状态和错误日志：
+## 文档索引
 
-```bash
-sudo systemctl status nginx --no-pager
-sudo tail -n 100 /var/log/nginx/error.log
-```
+更多设计和实现细节放在 `doc/` 目录：
 
-可选覆盖项：
+- [文档索引](doc/README.md)
+- [需求文档](doc/requirements.md)
+- [后端设计](doc/backend-design.md)
+- [前端设计](doc/frontend-design.md)
+- [API 与字段契约](doc/api-contract.md)
+- [数据模型](doc/data-model.md)
+- [安全风险设计](doc/security-risk-design.md)
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `ENV_FILE` | `.env` | 要加载的环境变量文件 |
-| `STATIC_DEST` | `/var/www/opensource-release-watcher` | nginx 静态资源目录 |
-| `SERVICE_NAME` | `opensource-release-watcher` | systemd/nginx 配置名 |
-| `SERVICE_USER` | 当前 sudo 发起用户 | systemd 运行用户 |
-| `SERVICE_GROUP` | 同 `SERVICE_USER` | systemd 运行用户组 |
-| `NGINX_SERVICE` | `nginx` | nginx systemd 服务名 |
+## 关注范围
 
-## 项目定位
+本项目关注：
 
-本项目不是包管理器，也不是自动升级工具。
-
-它的核心定位是：
-
-```text
-开源组件版本变化感知服务
-```
-
-它当前解决的问题是：
-
-```text
-我们依赖的开源组件，什么时候发布了新版本？
-这个新版本是否值得关注？
-应该给谁发邮件？
-是否已经通知过？
-后续是否需要升级评估？
-```
+- 当前使用的开源组件是否有新版本。
+- 当前使用版本是否命中公开已知漏洞。
+- 哪些订阅人需要收到提醒。
+- 是否已经通知过。
 
 ## License
 

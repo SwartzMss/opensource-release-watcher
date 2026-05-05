@@ -1,220 +1,154 @@
-# 后端实现设计
+# 后端设计
 
-## 1. 技术栈
+本文记录后端实现结构和关键业务流程。API 字段细节见 [API 与字段契约](api-contract.md)，数据库结构见 [数据模型](data-model.md)。
 
-后端推荐采用：
-
-- Go。
-- 标准库 `net/http` 或轻量路由框架。
-- SQLite。
-- Outlook / Microsoft Graph 邮件发送。
-- GitHub REST API。
-- 后台 scheduler 定时任务。
-
-推荐目录：
-
-```text
-backend/
-├── cmd/
-│   └── server/
-│       └── main.go
-├── internal/
-│   ├── api/
-│   ├── checker/
-│   ├── github/
-│   ├── notifier/
-│   ├── scheduler/
-│   ├── service/
-│   ├── storage/
-│   └── version/
-└── go.mod
-```
-
-## 2. 模块职责
+## 1. 模块职责
 
 | 模块 | 职责 |
 | --- | --- |
-| api | HTTP 路由、请求参数解析、响应封装 |
-| service | 业务编排，连接 API、storage、checker、notifier |
-| storage | SQLite 数据访问，负责组件、订阅人、检查记录、通知记录持久化 |
-| github | 调用 GitHub API 查询 Release 和 Tag |
-| checker | 执行版本检查、版本比较、Release Note 摘要、通知判定 |
-| notifier | 邮件通知发送 |
-| scheduler | 定时触发全量检查任务 |
-| version | 版本号标准化和比较 |
+| `api` | HTTP 路由、认证、请求解析、统一响应 |
+| `service` | 业务编排，串联检查、漏洞、通知和运行状态 |
+| `storage` | SQLite 数据访问和记录保留策略 |
+| `github` | GitHub REST API client，支持 token、代理、重试和日志 |
+| `gitrepo` | 解析组件版本对应的 Git tag / commit |
+| `checker` | 版本检查，读取 Release / Tag 并比较版本 |
+| `security` | 当前版本漏洞检查和修复版本建议 |
+| `osv` | OSV API client |
+| `notifier` | 邮件发送，当前使用 Microsoft Graph |
+| `scheduler` | 周期性触发全量组件检查 |
+| `version` | 版本标准化和比较 |
 
-## 3. 配置项
+## 2. 组件检查流程
 
-服务端基础配置通过环境变量或配置文件提供。
-
-| 配置项 | 必填 | 说明 |
-| --- | --- | --- |
-| SERVER_ADDR | 否 | HTTP 监听地址，默认 `:8080` |
-| DB_PATH | 否 | SQLite 文件路径，默认 `data/watcher.db`，相对路径按启动时工作目录解析 |
-| GITHUB_TOKEN | 否 | GitHub API Token，用于提高限流额度 |
-| CHECK_INTERVAL | 否 | 定时检查间隔，例如 `6h` |
-| SESSION_IDLE_TIMEOUT | 否 | 会话空闲超时时间，默认 `10m` |
-| GRAPH_CLIENT_ID | 否 | Azure App Registration client ID |
-| GRAPH_CLIENT_SECRET | 否 | Azure App Registration client secret；公共客户端可不填 |
-| GRAPH_ACCESS_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph access token |
-| GRAPH_REFRESH_TOKEN | 否 | `tools/outlook_tokens.py` 生成的 Microsoft Graph refresh token |
-
-登录态使用签名 cookie 保存，并在每次有效 API 请求后刷新空闲时间。会话在 `SESSION_IDLE_TIMEOUT` 指定的空闲时长后自动失效，默认 10 分钟。
-
-## 4. API 设计
-
-### 4.1 组件 API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/components` | 查询组件列表 |
-| POST | `/api/components` | 新增组件 |
-| GET | `/api/components/{id}` | 查询组件详情 |
-| PUT | `/api/components/{id}` | 更新组件 |
-| DELETE | `/api/components/{id}` | 删除组件 |
-| POST | `/api/components/{id}/check` | 手动检查单个组件 |
-
-新增组件请求：
-
-```json
-{
-  "name": "protobuf",
-  "repo_url": "https://github.com/protocolbuffers/protobuf",
-  "current_version": "3.20.1",
-  "check_strategy": "release_first",
-  "enabled": true,
-  "notes": "C++ protobuf runtime"
-}
-```
-
-组件的 `repo_url` 创建后不可修改；`current_version` 是版本基线，编辑时只允许向前升级，不允许回退，并且必须能在 GitHub Release 或 Tag 历史中找到；如果需要重置基线，建议删除后重新创建组件记录。
-
-### 4.2 订阅人 API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/global-subscribers` | 查询订阅人 |
-| POST | `/api/global-subscribers` | 新增订阅人 |
-| PUT | `/api/global-subscribers/{id}` | 更新订阅人 |
-| PUT | `/api/global-subscribers/{id}/components` | 更新订阅模块 |
-| DELETE | `/api/global-subscribers/{id}` | 删除订阅人，并清理该邮箱的通知历史 |
-| GET | `/api/components/{id}/subscribers` | 查询组件订阅人 |
-| POST | `/api/components/{id}/subscribers` | 新增订阅人 |
-| PUT | `/api/subscribers/{id}` | 更新订阅人 |
-| DELETE | `/api/subscribers/{id}` | 删除订阅人 |
-
-### 4.3 检查 API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/system-runs` | 查询全量检查运行记录 |
-| GET | `/api/check-records` | 查询检查记录 |
-| GET | `/api/check-records/{id}` | 查询检查详情 |
-
-### 4.4 通知 API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/notification-records` | 查询通知记录 |
-| POST | `/api/notification-records/test` | 发送测试邮件 |
-| GET | `/api/notification-records/{id}` | 查询通知详情 |
-
-### 4.5 仪表盘 API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/dashboard/summary` | 查询仪表盘汇总数据 |
-
-响应示例：
-
-```json
-{
-  "component_total": 32,
-  "enabled_component_total": 28,
-  "components_with_update": 5,
-  "last_check_failed_total": 2,
-  "notification_failed_total": 1,
-  "last_run_duration_seconds": 3,
-  "check_interval_seconds": 21600,
-  "last_full_check_at": "2026-04-28T10:00:00Z",
-  "next_check_at": "2026-04-28T16:00:00Z"
-}
-```
-
-## 5. 检查逻辑
-
-单组件检查流程：
+单个组件检查会创建一条 `component_check_runs`，用于关联版本检查、漏洞检查和通知结果。
 
 ```text
-读取组件信息
-      ↓
-创建 component_check_runs 批次
-      ↓
-判断组件是否启用
-      ↓
-按检查策略查询 GitHub Release 或 Tag
-      ↓
-标准化版本号
-      ↓
-比较 latest_version 与 last_seen_version
-      ↓
+读取组件
+  ↓
+创建 component_check_runs
+  ↓
+执行版本检查
+  ↓
 写入 check_records
-      ↓
-异步执行 OSV 漏洞检查
-      ↓
+  ↓
+更新 components 最近检查状态
+  ↓
+异步执行漏洞检查
+  ↓
 写入 component_security_profiles / component_security_records
-      ↓
-聚合版本检查和安全检查结果
-      ↓
-按订阅人和 fingerprint 判断是否需要发送一封邮件
-      ↓
-更新 components 最近状态字段
+  ↓
+生成检查结果 fingerprint
+  ↓
+按订阅人判断是否需要发送聚合邮件
+  ↓
+写入 notification_records
+  ↓
+结束 component_check_runs
 ```
 
-版本判断规则：
+触发来源：
 
-- Release 优先策略下，优先使用 GitHub latest release。
-- 如果 latest release 不存在或仓库未使用 Release，则读取最新 Tag。
-- 版本号比较前移除常见前缀 `v`。
-- 无法解析为语义化版本时，可先按发布时间判断新旧。
-- 同一组件、收件人、通知类型和 fingerprint 已经存在成功通知记录时，不再重复发送。
-- 订阅人与组件的关联关系会保存 `last_notified_version`，用于判断该订阅人是否已经收到过更高版本。
+- `scheduler`：周期检查。
+- `manual_check`：用户手动检查。
+- `create_component`：新增组件后立即检查。
+- `update_component`：更新组件版本后立即检查。
 
-## 6. 邮件通知
+## 3. 版本检查
 
-邮件标题：
+检查策略：
+
+- `release_first`：优先读取 latest release，无 release 时回退到 tag。
+- `tag_only`：只读取 tag。
+
+版本判断：
+
+- 版本比较使用 `version` 模块。
+- 常见 `v` 前缀会被标准化。
+- 当前内部版本必须能在上游 Release / Tag 中解析。
+- 组件编辑时当前版本只允许向前升级。
+
+## 4. 漏洞检查
+
+漏洞检查由异步 worker 执行，避免组件检查接口长时间阻塞。
+
+主要步骤：
+
+1. 根据 `repo_url + current_version` 解析 commit。
+2. 使用 commit 查询 OSV。
+3. 对返回漏洞按 ID 去重。
+4. 为每个漏洞解析建议升级版本。
+5. 组件级建议升级版本取所有漏洞建议中的最高版本。
+6. 保存当前组件最新一次漏洞明细。
+
+状态含义：
+
+| 状态 | 含义 |
+| --- | --- |
+| `affected` | 当前版本命中 OSV 漏洞 |
+| `unknown` | 未命中漏洞或无法解析到足够证据 |
+| `check_failed` | OSV 或 GitHub 查询失败 |
+
+## 5. 通知策略
+
+通知是组件检查的最终聚合结果。
+
+通知触发条件：
+
+- 发现订阅人尚未收到的新版本。
+- 当前检查命中漏洞风险。
+
+通知去重字段：
 
 ```text
-[开源组件提醒] protobuf 发现新版本和安全风险
+component_id + recipient_email + notification_type + fingerprint
 ```
 
-邮件正文需要包含：
+`fingerprint` 由以下内容生成：
 
-- 组件名称。
-- GitHub 仓库。
-- 当前内部使用版本。
-- 版本检查结果。
-- 安全检查结果。
-- 建议升级版本。
-- 发布时间。
-- Release Note 摘要。
-- GitHub 链接。
-- 建议动作。
+- 最新版本。
+- 版本检查状态。
+- 漏洞检查状态。
+- 组件级建议升级版本。
+- 命中的漏洞 ID 列表。
 
-收件人规则：
+版本通知进度：
 
-- 订阅人可选择接收全部组件通知。
-- 组件订阅人只接收对应组件通知。
-- 启用状态的订阅人邮箱需要接收。
-- 通知去重按 `组件 + 收件人 + 通知类型 + fingerprint` 判断。
-- 每个订阅人与组件的关联关系会记录 `last_notified_version`，用于推进该订阅人的版本进度。
-- 新订阅人加入后，仅会收到其基线版本之后出现的新版本通知。
-- 漏洞状态使用 fingerprint 去重；新订阅人在后续检查中如果还未收到过当前漏洞状态，会收到一次安全风险通知。
+- 每个订阅人与组件维护独立 `last_notified_version`。
+- 邮件发送成功后推进该订阅人的版本进度。
+- 漏洞风险使用 fingerprint 去重，不依赖版本进度。
 
-## 7. 错误处理
+## 6. 运行状态检测
 
-- GitHub API 请求失败时，检查记录状态为 `failed`，并记录错误信息。
-- 单个组件检查失败不影响其他组件检查。
-- 邮件发送失败时，写入失败通知记录，不回滚检查记录。
-- 数据库写入失败需要返回 API 错误，并记录日志。
-- GitHub Rate Limit 需要识别并记录明确错误。
+系统概览中的代理和 GitHub Token 状态由后台定时检测。
+
+策略：
+
+- 服务启动后立即异步检测一次。
+- 后续每 2 小时刷新一次。
+- `/api/system/status` 只返回缓存结果。
+- 探测 GitHub rate limit API，失败时最多重试 3 次。
+
+## 7. 日志
+
+后端日志写入：
+
+```text
+log/server.log
+```
+
+关键日志点：
+
+- API 请求。
+- GitHub API 请求、响应和重试。
+- 组件检查运行创建、版本检查完成、漏洞检查完成。
+- 修复版本解析过程。
+- 通知发送、跳过和失败原因。
+- 运行状态后台检测结果。
+
+## 8. 错误处理
+
+- 单个组件检查失败不影响其他组件。
+- 版本检查失败会写入失败检查记录。
+- 漏洞检查失败会结束检查运行并标记部分失败。
+- 邮件发送失败会写入失败通知记录。
+- 通知记录引用的检查记录不会被保留策略删除。

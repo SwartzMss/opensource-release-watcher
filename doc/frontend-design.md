@@ -1,314 +1,162 @@
-# 前端实现设计
+# 前端设计
 
-## 1. 技术栈
+本文记录前端页面职责、关键交互和状态展示规则。API 字段以 [API 与字段契约](api-contract.md) 为准。
 
-前端推荐采用：
+## 1. 页面结构
 
-- React。
-- TypeScript。
-- Vite。
-- Ant Design。
-- React Router。
-- Axios 或基于 `fetch` 的轻量 API client。
+| 页面 | 目的 |
+| --- | --- |
+| 仪表盘 | 展示系统概览、运行状态和最近组件版本动态 |
+| 组件管理 | 维护组件清单，触发单组件检查 |
+| 漏洞检查 | 查看组件当前版本的漏洞状态和漏洞明细 |
+| 订阅人管理 | 维护收件人和订阅范围 |
+| 检查记录 | 查看版本检查历史 |
+| 通知记录 | 查看邮件发送历史和正文快照 |
 
-前端目录建议：
+## 2. 仪表盘
 
-```text
-frontend/
-├── src/
-│   ├── api/
-│   ├── components/
-│   ├── pages/
-│   ├── routes/
-│   ├── types/
-│   ├── utils/
-│   ├── App.tsx
-│   └── main.tsx
-├── public/
-├── package.json
-└── vite.config.ts
-```
+核心卡片：
 
-## 2. 页面规划
+- 组件管理：组件总数。
+- 组件更新：当前存在上游新版本的组件数量。
+- 漏洞检查：当前命中漏洞的组件数量。
+- 检查异常：最近检查失败数量。
+- 通知异常：邮件发送失败数量。
 
-### 2.1 仪表盘
+系统概览：
 
-用于展示系统整体状态。
-
-核心信息：
-
-- 组件总数。
-- 启用监控组件数。
-- 组件更新数。
-- 检查异常数。
-- 通知异常数。
+- 代理设置。
+- GitHub Token。
+- 调度状态。
 - 最近检查时间。
+- 邮件功能。
 
-主要操作：
+代理和 GitHub Token 状态来自后端缓存，页面刷新不会触发实时网络探测。
 
-- 查看系统概览。
-- 查看异常提醒。
-- 查看组件版本动态。
+组件版本动态：
 
-组件版本动态使用表格展示，核心列包括：
+- 展示最近有更新的检查记录。
+- 通知状态优先按 `run_id` 匹配，其次按 `check_record_id`，最后按 `组件 + 最新版本` 兼容历史数据。
+- 漏洞风险来自组件最新安全状态。
 
-- 组件。
+## 3. 组件管理
+
+列表展示：
+
+- 组件名称。
+- GitHub 仓库。
 - 当前版本。
 - 最新版本。
-- 最近通知状态。
-- 最新检查时间。
+- 是否启用。
+- 最近检查状态。
+- 最近检查时间。
 - 漏洞风险。
 
-### 2.2 组件管理
+编辑规则：
 
-用于维护开源组件清单。
+- `repo_url` 创建后不可编辑。
+- `current_version` 只允许向前升级。
+- `current_version` 需要能在 GitHub Release / Tag 中解析。
+- 编辑表单只维护组件基础信息，不展示漏洞概要。
 
-列表字段：
+操作：
 
-| 字段 | 说明 |
-| --- | --- |
-| name | 组件名称 |
-| repo_url | GitHub 仓库地址 |
-| current_version | 当前内部使用版本 |
-| latest_version | 最近检查到的上游版本 |
-| enabled | 是否启用检查 |
-| last_check_status | 最近检查状态 |
-| last_checked_at | 最近检查时间 |
+- 新增组件后立即触发一次组件检查。
+- 更新组件后立即触发一次组件检查。
+- 手动检查按钮触发单组件检查。
 
-支持操作：
+## 4. 漏洞检查
 
-- 新增组件。
-- 编辑组件。
-- 启用或禁用检查。
-- 删除组件。
-- 手动检查单个组件。
-- 查看检查历史。
-- 查看通知历史。
+列表按组件聚合展示当前安全状态。
 
-表单字段：
+字段：
 
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| name | string | 是 | 组件展示名称 |
-| repo_url | string | 是 | GitHub 仓库完整地址 |
-| current_version | string | 是 | 当前内部使用版本 |
-| check_strategy | string | 是 | `release_first` 或 `tag_only` |
-| enabled | boolean | 是 | 是否启用定时检查 |
-| notes | string | 否 | 备注 |
+- 组件名称。
+- 当前检查版本。
+- 漏洞状态。
+- 漏洞数量。
+- 漏洞编号。
+- 建议升级版本。
+- 最近检查时间。
 
-`repo_url` 创建后不可修改；`current_version` 作为版本基线使用，编辑时只允许向前升级，不允许回退，并且必须能在 GitHub Release 或 Tag 历史中找到；若需要重置基线，建议删除后重新创建组件。
-
-### 2.3 漏洞检查
-
-用于查看组件安全概览和漏洞编号。
-
-列表字段：
-
-| 字段 | 说明 |
-| --- | --- |
-| component_name | 组件名称 |
-| risk_status | 漏洞状态，`有漏洞`、`未识别`、`检查失败` |
-| vulnerability_ids | 命中的 OSV 编号 |
-| vulnerability_count | 漏洞数量 |
-| current_version | 当前检查版本 |
-| security_checked_at | 最近检查时间 |
-
-支持操作：
-
-- 按组件筛选。
-- 按漏洞状态筛选。
-- 查看漏洞概览。
-- 查看漏洞编号和漏洞明细。
-
-详情区域：
+详情区：
 
 - 组件概览。
 - 漏洞编号列表。
-- 漏洞明细表。
-- 证据链接。
+- 单个漏洞摘要、严重性、建议升级版本和 OSV 链接。
 
-### 2.4 订阅人管理
+展示规则：
 
-用于维护订阅人以及其订阅的组件模块。
+- `affected` 显示“有漏洞”。
+- `unknown` 显示“未识别”。
+- `check_failed` 显示“检查失败”。
+- 修复版本是 commit hash 且未解析成版本号时，界面展示 `-`。
 
-列表字段：
+## 5. 订阅人管理
 
-| 字段 | 说明 |
-| --- | --- |
-| name | 订阅人名称 |
-| email | 邮箱地址 |
-| subscribe_scope | 订阅范围，全部组件或指定组件 |
-| enabled | 是否启用 |
-| created_at | 创建时间 |
+订阅人支持两种范围：
 
-支持操作：
+- 全部组件。
+- 指定组件。
 
-- 编辑订阅人。
-- 选择或调整订阅组件。
-- 一键全选组件。
-- 启用或禁用订阅。
-- 删除订阅人。
+交互规则：
 
-基础信息里提供“订阅所有模块”开关。
+- 开启“订阅所有模块”后，模块选择区域只读。
+- 关闭后恢复指定组件选择。
+- 删除订阅人时，后端同步清理该邮箱的通知记录和订阅进度。
 
-- 开启后，模块选择页只读，不再允许编辑具体组件。
-- 关闭后，模块选择页恢复可编辑。
-- 切换开关时保留原有模块选择，便于在全部模块模式和部分模块模式之间来回切换。
+## 6. 检查记录
 
-### 2.5 检查记录
+用于查看版本检查历史。
 
-用于查看每次版本检查结果。单个组件检查还会关联一轮漏洞检查和聚合通知。
+核心字段：
 
-列表字段：
+- 组件。
+- 检查运行 ID。
+- 数据来源。
+- 检查前版本。
+- 最新版本。
+- 是否存在更新。
+- 状态。
+- 错误信息。
+- 检查时间。
 
-| 字段 | 说明 |
-| --- | --- |
-| component_name | 组件名称 |
-| run_id | 组件检查运行 ID |
-| source | 数据来源，Release 或 Tag |
-| previous_version | 检查前记录版本 |
-| latest_version | 本次检查到的最新版本 |
-| has_update | 是否存在更新 |
-| status | 检查状态 |
-| error_message | 失败原因 |
-| checked_at | 检查时间 |
-
-支持操作：
+操作：
 
 - 查看 Release Note 摘要。
-- 打开 GitHub Release 或 Tag 链接。
+- 打开 GitHub Release / Tag 链接。
 - 按组件、状态、是否有更新筛选。
 
-### 2.6 通知记录
+## 7. 通知记录
 
-用于查看邮件发送记录。当前邮件是版本检查和漏洞检查的聚合通知。
+用于查看邮件发送历史。
 
-列表字段：
+核心字段：
 
-| 字段 | 说明 |
-| --- | --- |
-| component_name | 组件名称 |
-| notification_type | 通知类型 |
-| version | 通知对应的最新版本或当前版本 |
-| recipient_email | 收件人 |
-| status | 发送状态 |
-| error_message | 失败原因 |
-| sent_at | 发送时间 |
+- 组件。
+- 检查运行 ID。
+- 通知类型。
+- 通知版本。
+- 收件人。
+- 发送状态。
+- 失败原因。
+- 发送时间。
 
-支持操作：
+详情展示邮件正文快照。
 
-- 按组件筛选。
-- 按通知状态筛选。
-- 查看邮件正文快照。
+筛选条件：
 
-## 3. 前端类型定义
+- 组件。
+- 收件人。
+- 通知状态。
 
-```ts
-export interface Component {
-  id: number;
-  name: string;
-  repoOwner: string;
-  repoName: string;
-  repoUrl: string;
-  currentVersion: string;
-  latestVersion?: string;
-  checkStrategy: 'release_first' | 'tag_only';
-  enabled: boolean;
-  lastCheckStatus?: 'success' | 'failed' | 'skipped';
-  lastCheckedAt?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+## 8. 移动端
 
-export interface Subscriber {
-  id: number;
-  componentId: number;
-  name: string;
-  email: string;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+移动端优先使用卡片展示表格信息。
 
-export interface CheckRecord {
-  id: number;
-  runId?: number;
-  componentId: number;
-  source: 'release' | 'tag';
-  previousVersion?: string;
-  latestVersion?: string;
-  releaseTitle?: string;
-  releaseUrl?: string;
-  releasePublishedAt?: string;
-  releaseNoteSummary?: string;
-  hasUpdate: boolean;
-  status: 'success' | 'failed';
-  errorMessage?: string;
-  checkedAt: string;
-}
+要求：
 
-export interface NotificationRecord {
-  id: number;
-  runId?: number;
-  componentId: number;
-  checkRecordId?: number;
-  notificationType: 'component_check_summary';
-  fingerprint?: string;
-  version: string;
-  recipientEmail: string;
-  subject: string;
-  body: string;
-  status: 'sent' | 'failed';
-  errorMessage?: string;
-  sentAt?: string;
-  createdAt: string;
-}
-```
-
-## 4. API 调用约定
-
-前端统一通过 `/api` 前缀访问后端。
-
-通用响应格式：
-
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "data": {}
-}
-```
-
-分页响应格式：
-
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "data": {
-    "items": [],
-    "total": 0,
-    "page": 1,
-    "page_size": 20
-  }
-}
-```
-
-错误响应格式：
-
-```json
-{
-  "code": 40001,
-  "message": "component not found",
-  "data": null
-}
-```
-
-## 5. 交互规则
-
-- 手动检查组件时，按钮进入 loading 状态，接口返回后刷新组件状态和检查记录。
-- 删除组件前需要二次确认。
-- 禁用组件后，该组件不再进入定时检查任务。
-- 新增组件时需要校验 GitHub 仓库地址和当前版本。
-- 列表默认按更新时间或检查时间倒序。
+- 核心列表信息可读。
+- 常用操作可点击。
+- 弹窗宽度适配小屏。
+- 长文本使用省略或详情展开。
