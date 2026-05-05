@@ -1675,31 +1675,6 @@ function ComponentModal(props: {
         <Form.Item name="current_version" label="当前版本" rules={[{ required: true }]}>
           <Input placeholder="3.20.1" suffix={latestVersionLoading ? <Spin size="small" /> : undefined} />
         </Form.Item>
-        {props.isEditing && (
-          <Form.Item shouldUpdate noStyle>
-            {({ getFieldsValue }) => {
-              const values = getFieldsValue() as Partial<ComponentItem>;
-              const securityMeta = componentSecurityMeta(values);
-              const securitySummary = values.security_summary?.trim() || values.security_reason?.trim() || '暂无安全检查结果';
-              const securityCheckedAt = formatTime(values.security_checked_at);
-              return (
-                <div className="component-security-panel">
-                  <Alert
-                    type={securityMeta.alertType}
-                    showIcon
-                    message={securityMeta.label}
-                    description={
-                      <div className="component-security-summary">
-                        <div>{securitySummary}</div>
-                        <div className="component-security-meta">最近检查：{securityCheckedAt}</div>
-                      </div>
-                    }
-                  />
-                </div>
-              );
-            }}
-          </Form.Item>
-        )}
         <Form.Item name="check_strategy" label="检查策略">
           <Select options={[{ label: 'Release 优先', value: 'release_first' }, { label: '仅 Tag', value: 'tag_only' }]} />
         </Form.Item>
