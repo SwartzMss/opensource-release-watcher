@@ -9,9 +9,9 @@
 - 组件是主实体。
 - 订阅人是主实体。
 - 每个订阅人可以选择全部组件或指定组件集合。
-- 每次检查都生成检查记录。
+- 每次组件检查都生成一条检查运行记录，并关联版本检查和漏洞检查结果。
 - 每次邮件发送都生成通知记录。
-- 通过唯一约束避免同一组件同一版本对同一收件人重复通知。
+- 通过唯一约束避免同一组件同一收件人重复接收相同检查结果通知。
 
 ## 2. 表结构
 
@@ -130,6 +130,7 @@ PRIMARY KEY(name)
 | security_mode | TEXT | 否 | 预留字段，第一版不启用 |
 | security_lookup_mode | TEXT | 是 | 查询优先级，第一版仅支持 `commit_first` |
 | security_commit_sha | TEXT | 否 | 若该组件版本可映射到固定提交，可缓存提交 SHA |
+| security_suggested_version | TEXT | 否 | 最近一次汇总后的建议升级版本 |
 | security_package_name | TEXT | 否 | 预留字段，第一版不使用 |
 | security_ecosystem | TEXT | 否 | 预留字段，第一版不使用 |
 | security_aliases | TEXT | 否 | 预留字段，第二阶段 Release Note / Changelog 检索时使用 |
@@ -157,6 +158,7 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | id | INTEGER | 是 | 主键 |
+| run_id | INTEGER | 否 | 组件检查运行 ID |
 | component_id | INTEGER | 是 | 组件 ID |
 | version | TEXT | 是 | 被检查的版本 |
 | commit_sha | TEXT | 否 | 对应的 Git 提交 |
@@ -182,13 +184,43 @@ FOREIGN KEY(component_id) REFERENCES components(id)
 INDEX(component_id, version)
 ```
 
-### 2.8 check_records
+### 2.8 component_check_runs
+
+保存单个组件一次完整检查运行状态，用于把版本检查、漏洞检查和最终通知关联在一起。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| id | INTEGER | 是 | 主键 |
+| component_id | INTEGER | 是 | 组件 ID |
+| trigger_type | TEXT | 是 | 触发方式，`scheduler`、`manual_check`、`create_component`、`update_component` |
+| status | TEXT | 是 | 运行状态，`running`、`success`、`failed`、`partial_failed` |
+| version_status | TEXT | 否 | 版本检查状态 |
+| security_status | TEXT | 否 | 漏洞检查状态 |
+| check_record_id | INTEGER | 否 | 关联的版本检查记录 ID |
+| latest_version | TEXT | 否 | 本轮检查到的最新版本 |
+| security_suggested_version | TEXT | 否 | 本轮汇总后的建议升级版本 |
+| affected_vulnerability_count | INTEGER | 是 | 本轮命中的漏洞数量 |
+| notification_fingerprint | TEXT | 否 | 本轮通知去重指纹 |
+| notified_at | DATETIME | 否 | 本轮成功发送通知的时间 |
+| started_at | DATETIME | 是 | 开始时间 |
+| finished_at | DATETIME | 否 | 结束时间 |
+| error_message | TEXT | 否 | 失败原因 |
+
+建议索引：
+
+```sql
+CREATE INDEX idx_component_check_runs_component_id ON component_check_runs(component_id);
+CREATE INDEX idx_component_check_runs_started_at ON component_check_runs(started_at);
+```
+
+### 2.9 check_records
 
 保存每次版本检查结果。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | id | INTEGER | 是 | 主键 |
+| run_id | INTEGER | 否 | 组件检查运行 ID |
 | component_id | INTEGER | 是 | 组件 ID |
 | source | TEXT | 否 | 数据来源，`release` 或 `tag` |
 | previous_version | TEXT | 否 | 检查前记录的版本 |
@@ -207,19 +239,23 @@ INDEX(component_id, version)
 
 ```sql
 CREATE INDEX idx_check_records_component_id ON check_records(component_id);
+CREATE INDEX idx_check_records_run_id ON check_records(run_id);
 CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
 ```
 
-### 2.9 notification_records
+### 2.10 notification_records
 
 保存邮件通知记录。
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | id | INTEGER | 是 | 主键 |
+| run_id | INTEGER | 否 | 组件检查运行 ID |
 | component_id | INTEGER | 是 | 组件 ID |
-| check_record_id | INTEGER | 是 | 检查记录 ID |
-| version | TEXT | 是 | 通知对应的最新版本 |
+| check_record_id | INTEGER | 否 | 版本检查记录 ID |
+| notification_type | TEXT | 是 | 通知类型，当前为 `component_check_summary` |
+| fingerprint | TEXT | 是 | 通知去重指纹 |
+| version | TEXT | 是 | 通知对应的最新版本或当前版本 |
 | recipient_email | TEXT | 是 | 收件人邮箱 |
 | subject | TEXT | 是 | 邮件标题 |
 | body | TEXT | 是 | 邮件正文快照 |
@@ -231,12 +267,13 @@ CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
 建议约束：
 
 ```sql
-UNIQUE(component_id, version, recipient_email)
+UNIQUE(component_id, recipient_email, notification_type, fingerprint)
+FOREIGN KEY(run_id) REFERENCES component_check_runs(id)
 FOREIGN KEY(component_id) REFERENCES components(id)
 FOREIGN KEY(check_record_id) REFERENCES check_records(id)
 ```
 
-### 2.10 system_runs
+### 2.11 system_runs
 
 保存全量检查任务运行记录。
 
@@ -310,8 +347,75 @@ CREATE TABLE schema_migrations (
   applied_at DATETIME NOT NULL
 );
 
+CREATE TABLE component_security_profiles (
+  component_id INTEGER PRIMARY KEY,
+  security_mode TEXT,
+  security_lookup_mode TEXT NOT NULL DEFAULT 'commit_first',
+  security_commit_sha TEXT,
+  security_suggested_version TEXT,
+  security_package_name TEXT,
+  security_ecosystem TEXT,
+  security_aliases TEXT,
+  security_notes TEXT,
+  security_tag_pattern TEXT,
+  last_security_status TEXT,
+  last_security_reason TEXT,
+  last_security_raw_payload TEXT,
+  last_security_checked_at DATETIME,
+  last_security_summary TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  FOREIGN KEY(component_id) REFERENCES components(id)
+);
+
+CREATE TABLE component_security_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
+  component_id INTEGER NOT NULL,
+  version TEXT NOT NULL,
+  commit_sha TEXT,
+  risk_type TEXT NOT NULL,
+  risk_status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  identifier TEXT,
+  package_name TEXT,
+  ecosystem TEXT,
+  affected_range TEXT,
+  fixed_version TEXT,
+  severity TEXT,
+  confidence REAL,
+  summary TEXT,
+  status_reason TEXT,
+  raw_payload TEXT,
+  evidence_url TEXT,
+  created_at DATETIME NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id),
+  FOREIGN KEY(component_id) REFERENCES components(id)
+);
+
+CREATE TABLE component_check_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  component_id INTEGER NOT NULL,
+  trigger_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  version_status TEXT,
+  security_status TEXT,
+  check_record_id INTEGER,
+  latest_version TEXT,
+  security_suggested_version TEXT,
+  affected_vulnerability_count INTEGER NOT NULL DEFAULT 0,
+  notification_fingerprint TEXT,
+  notified_at DATETIME,
+  started_at DATETIME NOT NULL,
+  finished_at DATETIME,
+  error_message TEXT,
+  FOREIGN KEY(component_id) REFERENCES components(id),
+  FOREIGN KEY(check_record_id) REFERENCES check_records(id)
+);
+
 CREATE TABLE check_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   component_id INTEGER NOT NULL,
   source TEXT,
   previous_version TEXT,
@@ -325,13 +429,17 @@ CREATE TABLE check_records (
   status TEXT NOT NULL,
   error_message TEXT,
   checked_at DATETIME NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id),
   FOREIGN KEY(component_id) REFERENCES components(id)
 );
 
 CREATE TABLE notification_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   component_id INTEGER NOT NULL,
-  check_record_id INTEGER NOT NULL,
+  check_record_id INTEGER,
+  notification_type TEXT NOT NULL DEFAULT 'component_check_summary',
+  fingerprint TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL,
   recipient_email TEXT NOT NULL,
   subject TEXT NOT NULL,
@@ -340,9 +448,10 @@ CREATE TABLE notification_records (
   error_message TEXT,
   sent_at DATETIME,
   created_at DATETIME NOT NULL,
-  UNIQUE(component_id, version, recipient_email),
+  UNIQUE(component_id, recipient_email, notification_type, fingerprint),
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id),
   FOREIGN KEY(component_id) REFERENCES components(id),
-  FOREIGN KEY(check_record_id) REFERENCES check_records(id)
+  FOREIGN KEY(check_record_id) REFERENCES check_records(id) ON DELETE SET NULL
 );
 
 CREATE TABLE system_runs (
@@ -358,7 +467,14 @@ CREATE TABLE system_runs (
 );
 
 CREATE INDEX idx_check_records_component_id ON check_records(component_id);
+CREATE INDEX idx_check_records_run_id ON check_records(run_id);
 CREATE INDEX idx_check_records_checked_at ON check_records(checked_at);
+CREATE INDEX idx_component_check_runs_component_id ON component_check_runs(component_id);
+CREATE INDEX idx_component_check_runs_started_at ON component_check_runs(started_at);
+CREATE INDEX idx_component_security_records_component_id ON component_security_records(component_id);
+CREATE INDEX idx_component_security_records_run_id ON component_security_records(run_id);
+CREATE INDEX idx_component_security_records_created_at ON component_security_records(created_at);
 CREATE INDEX idx_notification_records_component_id ON notification_records(component_id);
+CREATE INDEX idx_notification_records_run_id ON notification_records(run_id);
 CREATE INDEX idx_notification_records_created_at ON notification_records(created_at);
 ```

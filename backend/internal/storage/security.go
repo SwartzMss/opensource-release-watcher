@@ -9,7 +9,7 @@ import (
 
 func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID int64) ([]ComponentSecurityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		SELECT rs.id, rs.run_id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
 		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
 		       rs.raw_payload, rs.evidence_url, rs.created_at
 		FROM component_security_records rs
@@ -24,14 +24,16 @@ func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID in
 	records := make([]ComponentSecurityRecord, 0)
 	for rows.Next() {
 		var record ComponentSecurityRecord
+		var runID sql.NullInt64
 		var commitSHA, identifier, affectedRange, fixedVersion, severity, summary, statusReason, rawPayload, evidenceURL sql.NullString
 		if err := rows.Scan(
-			&record.ID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
+			&record.ID, &runID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
 			&affectedRange, &fixedVersion, &severity, &record.Confidence, &summary, &statusReason,
 			&rawPayload, &evidenceURL, &record.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
+		record.RunID = runID.Int64
 		record.CommitSHA = commitSHA.String
 		record.Identifier = identifier.String
 		record.AffectedRange = affectedRange.String
@@ -71,7 +73,7 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT rs.id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
+		SELECT rs.id, rs.run_id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
 		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
 		       rs.raw_payload, rs.evidence_url, rs.created_at
 		FROM component_security_records rs
@@ -86,14 +88,16 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	items := []ComponentSecurityRecord{}
 	for rows.Next() {
 		var record ComponentSecurityRecord
+		var runID sql.NullInt64
 		var commitSHA, identifier, affectedRange, fixedVersion, severity, summary, statusReason, rawPayload, evidenceURL sql.NullString
 		if err := rows.Scan(
-			&record.ID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
+			&record.ID, &runID, &record.ComponentID, &record.ComponentName, &record.Version, &commitSHA, &record.RiskType, &record.RiskStatus, &record.Source, &identifier,
 			&affectedRange, &fixedVersion, &severity, &record.Confidence, &summary, &statusReason,
 			&rawPayload, &evidenceURL, &record.CreatedAt,
 		); err != nil {
 			return nil, 0, err
 		}
+		record.RunID = runID.Int64
 		record.CommitSHA = commitSHA.String
 		record.Identifier = identifier.String
 		record.AffectedRange = affectedRange.String
@@ -229,11 +233,11 @@ func (s *Store) SaveComponentSecurityState(ctx context.Context, profile Componen
 		}
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO component_security_records (
-				component_id, version, commit_sha, risk_type, risk_status, source, identifier,
+				run_id, component_id, version, commit_sha, risk_type, risk_status, source, identifier,
 				package_name, ecosystem, affected_range, fixed_version, severity, confidence,
 				summary, status_reason, raw_payload, evidence_url, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			record.ComponentID, record.Version, nullableString(record.CommitSHA), record.RiskType, record.RiskStatus, record.Source, nullableString(record.Identifier),
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			nullableInt64(record.RunID), record.ComponentID, record.Version, nullableString(record.CommitSHA), record.RiskType, record.RiskStatus, record.Source, nullableString(record.Identifier),
 			nil, nil, nullableString(record.AffectedRange), nullableString(record.FixedVersion), nullableString(record.Severity), record.Confidence,
 			nullableString(record.Summary), nullableString(record.StatusReason), nullableString(record.RawPayload), nullableString(record.EvidenceURL), record.CreatedAt,
 		)

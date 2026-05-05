@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS component_security_profiles (
 
 CREATE TABLE IF NOT EXISTS component_security_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   component_id INTEGER NOT NULL,
   version TEXT NOT NULL,
   commit_sha TEXT,
@@ -99,11 +100,33 @@ CREATE TABLE IF NOT EXISTS component_security_records (
   raw_payload TEXT,
   evidence_url TEXT,
   created_at DATETIME NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id) ON DELETE SET NULL,
   FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS component_check_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  component_id INTEGER NOT NULL,
+  trigger_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  version_status TEXT,
+  security_status TEXT,
+  check_record_id INTEGER,
+  latest_version TEXT,
+  security_suggested_version TEXT,
+  affected_vulnerability_count INTEGER NOT NULL DEFAULT 0,
+  notification_fingerprint TEXT,
+  notified_at DATETIME,
+  started_at DATETIME NOT NULL,
+  finished_at DATETIME,
+  error_message TEXT,
+  FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE,
+  FOREIGN KEY(check_record_id) REFERENCES check_records(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS check_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   component_id INTEGER NOT NULL,
   source TEXT,
   previous_version TEXT,
@@ -117,13 +140,17 @@ CREATE TABLE IF NOT EXISTS check_records (
   status TEXT NOT NULL,
   error_message TEXT,
   checked_at DATETIME NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id) ON DELETE SET NULL,
   FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS notification_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER,
   component_id INTEGER NOT NULL,
-  check_record_id INTEGER NOT NULL,
+  check_record_id INTEGER,
+  notification_type TEXT NOT NULL DEFAULT 'component_check_summary',
+  fingerprint TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL,
   recipient_email TEXT NOT NULL,
   subject TEXT NOT NULL,
@@ -132,9 +159,10 @@ CREATE TABLE IF NOT EXISTS notification_records (
   error_message TEXT,
   sent_at DATETIME,
   created_at DATETIME NOT NULL,
-  UNIQUE(component_id, version, recipient_email),
+  UNIQUE(component_id, recipient_email, notification_type, fingerprint),
+  FOREIGN KEY(run_id) REFERENCES component_check_runs(id) ON DELETE SET NULL,
   FOREIGN KEY(component_id) REFERENCES components(id) ON DELETE CASCADE,
-  FOREIGN KEY(check_record_id) REFERENCES check_records(id) ON DELETE CASCADE
+  FOREIGN KEY(check_record_id) REFERENCES check_records(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS system_runs (
@@ -150,9 +178,14 @@ CREATE TABLE IF NOT EXISTS system_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_check_records_component_id ON check_records(component_id);
+CREATE INDEX IF NOT EXISTS idx_check_records_run_id ON check_records(run_id);
 CREATE INDEX IF NOT EXISTS idx_check_records_checked_at ON check_records(checked_at);
+CREATE INDEX IF NOT EXISTS idx_component_check_runs_component_id ON component_check_runs(component_id);
+CREATE INDEX IF NOT EXISTS idx_component_check_runs_started_at ON component_check_runs(started_at);
 CREATE INDEX IF NOT EXISTS idx_component_security_records_component_id ON component_security_records(component_id);
+CREATE INDEX IF NOT EXISTS idx_component_security_records_run_id ON component_security_records(run_id);
 CREATE INDEX IF NOT EXISTS idx_component_security_records_created_at ON component_security_records(created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_records_component_id ON notification_records(component_id);
+CREATE INDEX IF NOT EXISTS idx_notification_records_run_id ON notification_records(run_id);
 CREATE INDEX IF NOT EXISTS idx_notification_records_created_at ON notification_records(created_at);
 `

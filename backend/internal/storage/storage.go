@@ -699,10 +699,10 @@ func (s *Store) CreateCheckRecord(ctx context.Context, record *CheckRecord) erro
 	}()
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO check_records (
-			component_id, source, previous_version, latest_version, release_title, release_url,
+			run_id, component_id, source, previous_version, latest_version, release_title, release_url,
 			release_published_at, release_note, release_note_summary, has_update, status, error_message, checked_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.ComponentID, record.Source, record.PreviousVersion, record.LatestVersion, record.ReleaseTitle, record.ReleaseURL,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		nullableInt64(record.RunID), record.ComponentID, record.Source, record.PreviousVersion, record.LatestVersion, record.ReleaseTitle, record.ReleaseURL,
 		record.ReleasePublishedAt, record.ReleaseNote, record.ReleaseNoteSummary, boolInt(record.HasUpdate), record.Status, record.ErrorMessage, record.CheckedAt,
 	)
 	if err != nil {
@@ -715,6 +715,7 @@ func (s *Store) CreateCheckRecord(ctx context.Context, record *CheckRecord) erro
 	_, err = tx.ExecContext(ctx, `
 		DELETE FROM check_records
 		WHERE component_id = ?
+		  AND id NOT IN (SELECT check_record_id FROM notification_records WHERE check_record_id IS NOT NULL)
 		  AND id NOT IN (
 			SELECT id
 			FROM check_records
@@ -755,7 +756,7 @@ func (s *Store) ListCheckRecords(ctx context.Context, opts ListOptions) ([]Check
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT cr.id, cr.component_id, c.name, cr.source, cr.previous_version, cr.latest_version,
+		SELECT cr.id, cr.run_id, cr.component_id, c.name, cr.source, cr.previous_version, cr.latest_version,
 		       cr.release_title, cr.release_url, cr.release_published_at, cr.release_note,
 		       cr.release_note_summary, cr.has_update, cr.status, cr.error_message, cr.checked_at
 		FROM check_records cr
@@ -779,7 +780,7 @@ func (s *Store) ListCheckRecords(ctx context.Context, opts ListOptions) ([]Check
 
 func (s *Store) GetCheckRecord(ctx context.Context, id int64) (*CheckRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT cr.id, cr.component_id, c.name, cr.source, cr.previous_version, cr.latest_version,
+		SELECT cr.id, cr.run_id, cr.component_id, c.name, cr.source, cr.previous_version, cr.latest_version,
 		       cr.release_title, cr.release_url, cr.release_published_at, cr.release_note,
 		       cr.release_note_summary, cr.has_update, cr.status, cr.error_message, cr.checked_at
 		FROM check_records cr
@@ -788,22 +789,77 @@ func (s *Store) GetCheckRecord(ctx context.Context, id int64) (*CheckRecord, err
 	return scanCheckRecord(row)
 }
 
+func (s *Store) CreateComponentCheckRun(ctx context.Context, run *ComponentCheckRun) error {
+	if run.StartedAt.IsZero() {
+		run.StartedAt = time.Now().UTC()
+	}
+	if run.Status == "" {
+		run.Status = "running"
+	}
+	result, err := s.db.ExecContext(ctx, `
+		INSERT INTO component_check_runs (
+			component_id, trigger_type, status, version_status, security_status, started_at, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		run.ComponentID, run.TriggerType, run.Status, run.VersionStatus, run.SecurityStatus, run.StartedAt, nullableString(run.ErrorMessage),
+	)
+	if err != nil {
+		return err
+	}
+	run.ID, err = result.LastInsertId()
+	return err
+}
+
+func (s *Store) UpdateComponentCheckRunVersion(ctx context.Context, runID int64, record CheckRecord) error {
+	if runID <= 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE component_check_runs
+		SET version_status = ?, check_record_id = ?, latest_version = ?, error_message = ?
+		WHERE id = ?`,
+		record.Status, record.ID, nullableString(record.LatestVersion), nullableString(record.ErrorMessage), runID,
+	)
+	return err
+}
+
+func (s *Store) FinishComponentCheckRun(ctx context.Context, run *ComponentCheckRun) error {
+	if run.ID <= 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	run.FinishedAt = &now
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE component_check_runs
+		SET status = ?, version_status = COALESCE(?, version_status), security_status = ?, security_suggested_version = ?,
+		    affected_vulnerability_count = ?, notification_fingerprint = ?,
+		    notified_at = ?, finished_at = ?, error_message = ?
+		WHERE id = ?`,
+		run.Status, nullableString(run.VersionStatus), nullableString(run.SecurityStatus), nullableString(run.SecuritySuggestedVersion),
+		run.AffectedVulnerabilityCount, nullableString(run.NotificationFingerprint),
+		run.NotifiedAt, run.FinishedAt, nullableString(run.ErrorMessage), run.ID,
+	)
+	return err
+}
+
 func (s *Store) CreateNotificationRecord(ctx context.Context, record *NotificationRecord) error {
 	now := time.Now().UTC()
 	record.CreatedAt = now
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO notification_records (
-			component_id, check_record_id, version, recipient_email, subject, body, status, error_message, sent_at, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(component_id, version, recipient_email) DO UPDATE SET
+			run_id, component_id, check_record_id, notification_type, fingerprint, version, recipient_email,
+			subject, body, status, error_message, sent_at, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(component_id, recipient_email, notification_type, fingerprint) DO UPDATE SET
+			run_id = excluded.run_id,
 			check_record_id = excluded.check_record_id,
+			version = excluded.version,
 			subject = excluded.subject,
 			body = excluded.body,
 			status = excluded.status,
 			error_message = excluded.error_message,
 			sent_at = excluded.sent_at,
 			created_at = excluded.created_at`,
-		record.ComponentID, record.CheckRecordID, record.Version, record.RecipientEmail, record.Subject,
+		nullableInt64(record.RunID), record.ComponentID, nullableInt64(record.CheckRecordID), normalizeNotificationType(record.Type), record.Fingerprint, record.Version, record.RecipientEmail, record.Subject,
 		record.Body, record.Status, record.ErrorMessage, record.SentAt, now,
 	)
 	if err != nil {
@@ -813,12 +869,12 @@ func (s *Store) CreateNotificationRecord(ctx context.Context, record *Notificati
 	return err
 }
 
-func (s *Store) HasSentNotification(ctx context.Context, componentID int64, version, recipientEmail string) (bool, error) {
+func (s *Store) HasSentNotificationFingerprint(ctx context.Context, componentID int64, notificationKind, fingerprint, recipientEmail string) (bool, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM notification_records
-		WHERE component_id = ? AND version = ? AND recipient_email = ? AND status = 'sent'`,
-		componentID, version, recipientEmail).Scan(&count)
+		WHERE component_id = ? AND notification_type = ? AND fingerprint = ? AND recipient_email = ? AND status = 'sent'`,
+		componentID, normalizeNotificationType(notificationKind), fingerprint, recipientEmail).Scan(&count)
 	return count > 0, err
 }
 
@@ -889,7 +945,7 @@ func (s *Store) ListNotificationRecords(ctx context.Context, opts ListOptions) (
 	limit, offset := opts.LimitOffset()
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT nr.id, nr.component_id, c.name, nr.check_record_id, nr.version, nr.recipient_email,
+		SELECT nr.id, nr.run_id, nr.component_id, c.name, nr.check_record_id, nr.notification_type, nr.fingerprint, nr.version, nr.recipient_email,
 		       nr.subject, '', nr.status, nr.error_message, nr.sent_at, nr.created_at
 		FROM notification_records nr
 		JOIN components c ON c.id = nr.component_id
@@ -912,7 +968,7 @@ func (s *Store) ListNotificationRecords(ctx context.Context, opts ListOptions) (
 
 func (s *Store) GetNotificationRecord(ctx context.Context, id int64) (*NotificationRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT nr.id, nr.component_id, c.name, nr.check_record_id, nr.version, nr.recipient_email,
+		SELECT nr.id, nr.run_id, nr.component_id, c.name, nr.check_record_id, nr.notification_type, nr.fingerprint, nr.version, nr.recipient_email,
 		       nr.subject, nr.body, nr.status, nr.error_message, nr.sent_at, nr.created_at
 		FROM notification_records nr
 		JOIN components c ON c.id = nr.component_id
@@ -1073,14 +1129,16 @@ func scanCheckRecord(row scanner) (*CheckRecord, error) {
 	var item CheckRecord
 	var releasePublishedAt sql.NullTime
 	var source, componentName, previousVersion, latestVersion, releaseTitle, releaseURL, releaseNote, releaseNoteSummary, errorMessage sql.NullString
+	var runID sql.NullInt64
 	var hasUpdate int
 	if err := row.Scan(
-		&item.ID, &item.ComponentID, &componentName, &source, &previousVersion, &latestVersion,
+		&item.ID, &runID, &item.ComponentID, &componentName, &source, &previousVersion, &latestVersion,
 		&releaseTitle, &releaseURL, &releasePublishedAt, &releaseNote, &releaseNoteSummary,
 		&hasUpdate, &item.Status, &errorMessage, &item.CheckedAt,
 	); err != nil {
 		return nil, err
 	}
+	item.RunID = runID.Int64
 	item.ComponentName = componentName.String
 	item.Source = source.String
 	item.PreviousVersion = previousVersion.String
@@ -1097,15 +1155,20 @@ func scanCheckRecord(row scanner) (*CheckRecord, error) {
 
 func scanNotificationRecord(row scanner) (*NotificationRecord, error) {
 	var item NotificationRecord
-	var componentName, body, errorMessage sql.NullString
+	var runID, checkRecordID sql.NullInt64
+	var componentName, notificationType, fingerprint, body, errorMessage sql.NullString
 	var sentAt sql.NullTime
 	if err := row.Scan(
-		&item.ID, &item.ComponentID, &componentName, &item.CheckRecordID, &item.Version, &item.RecipientEmail,
+		&item.ID, &runID, &item.ComponentID, &componentName, &checkRecordID, &notificationType, &fingerprint, &item.Version, &item.RecipientEmail,
 		&item.Subject, &body, &item.Status, &errorMessage, &sentAt, &item.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
+	item.RunID = runID.Int64
 	item.ComponentName = componentName.String
+	item.CheckRecordID = checkRecordID.Int64
+	item.Type = notificationType.String
+	item.Fingerprint = fingerprint.String
 	item.Body = body.String
 	item.ErrorMessage = errorMessage.String
 	item.SentAt = nullTimePtr(sentAt)
@@ -1138,6 +1201,21 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func nullableInt64(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
+}
+
+func normalizeNotificationType(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "component_check_summary"
+	}
+	return value
 }
 
 func nullTimePtr(value sql.NullTime) *time.Time {

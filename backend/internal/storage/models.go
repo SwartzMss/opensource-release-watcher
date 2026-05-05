@@ -48,6 +48,7 @@ type GlobalSubscriber struct {
 
 type CheckRecord struct {
 	ID                 int64      `json:"id"`
+	RunID              int64      `json:"run_id,omitempty"`
 	ComponentID        int64      `json:"component_id"`
 	ComponentName      string     `json:"component_name,omitempty"`
 	Source             string     `json:"source"`
@@ -66,9 +67,12 @@ type CheckRecord struct {
 
 type NotificationRecord struct {
 	ID             int64      `json:"id"`
+	RunID          int64      `json:"run_id,omitempty"`
 	ComponentID    int64      `json:"component_id"`
 	ComponentName  string     `json:"component_name,omitempty"`
 	CheckRecordID  int64      `json:"check_record_id"`
+	Type           string     `json:"notification_type"`
+	Fingerprint    string     `json:"fingerprint,omitempty"`
 	Version        string     `json:"version"`
 	RecipientEmail string     `json:"recipient_email"`
 	Subject        string     `json:"subject"`
@@ -89,6 +93,24 @@ type SystemRun struct {
 	StartedAt    time.Time  `json:"started_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	ErrorMessage string     `json:"error_message"`
+}
+
+type ComponentCheckRun struct {
+	ID                         int64      `json:"id"`
+	ComponentID                int64      `json:"component_id"`
+	TriggerType                string     `json:"trigger_type"`
+	Status                     string     `json:"status"`
+	VersionStatus              string     `json:"version_status"`
+	SecurityStatus             string     `json:"security_status"`
+	CheckRecordID              int64      `json:"check_record_id,omitempty"`
+	LatestVersion              string     `json:"latest_version,omitempty"`
+	SecuritySuggestedVersion   string     `json:"security_suggested_version,omitempty"`
+	AffectedVulnerabilityCount int        `json:"affected_vulnerability_count"`
+	NotificationFingerprint    string     `json:"notification_fingerprint,omitempty"`
+	NotifiedAt                 *time.Time `json:"notified_at,omitempty"`
+	StartedAt                  time.Time  `json:"started_at"`
+	FinishedAt                 *time.Time `json:"finished_at,omitempty"`
+	ErrorMessage               string     `json:"error_message"`
 }
 
 type ComponentSecurityProfile struct {
@@ -113,6 +135,7 @@ type ComponentSecurityProfile struct {
 
 type ComponentSecurityRecord struct {
 	ID            int64     `json:"id"`
+	RunID         int64     `json:"run_id,omitempty"`
 	ComponentID   int64     `json:"component_id"`
 	ComponentName string    `json:"component_name,omitempty"`
 	Version       string    `json:"version"`

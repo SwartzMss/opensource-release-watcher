@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +41,8 @@ type Service struct {
 
 type securityJob struct {
 	component    storage.Component
+	runID        int64
+	checkRecord  storage.CheckRecord
 	forceResolve bool
 	trigger      string
 }
@@ -74,7 +79,9 @@ func (s *Service) CreateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
 		log.Printf("clear security commit cache failed component_id=%d trigger=create_component err=%v", c.ID, err)
 	}
-	s.enqueueSecuritySync(*c, true, "create_component")
+	if _, err := s.runComponentCheck(ctx, *c, "create_component", true); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -89,7 +96,9 @@ func (s *Service) UpdateComponent(ctx context.Context, c *storage.Component) err
 	if err := s.store.ClearComponentSecurityCommitCache(ctx, c.ID); err != nil {
 		log.Printf("clear security commit cache failed component_id=%d trigger=update_component err=%v", c.ID, err)
 	}
-	s.enqueueSecuritySync(*c, true, "update_component")
+	if _, err := s.runComponentCheck(ctx, *c, "update_component", true); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -187,20 +196,42 @@ func (s *Service) CheckComponent(ctx context.Context, id int64) (*storage.CheckR
 		return nil, err
 	}
 	log.Printf("check component started id=%d name=%s repo=%s", component.ID, component.Name, component.RepoURL)
-	record := s.checker.Check(ctx, *component)
-	if err := s.store.CreateCheckRecord(ctx, &record); err != nil {
+	record, err := s.runComponentCheck(ctx, *component, "manual_check", false)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.store.UpdateComponentCheckState(ctx, *component, record); err != nil {
-		return nil, err
-	}
-	if record.Status == "success" && record.LatestVersion != "" {
-		if err := s.notifyUpdate(ctx, *component, record); err != nil {
-			record.ErrorMessage = err.Error()
-		}
-	}
-	s.enqueueSecuritySync(*component, false, "manual_check")
 	log.Printf("check component finished id=%d status=%s has_update=%t latest=%s previous=%s", component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
+	return record, nil
+}
+
+func (s *Service) runComponentCheck(ctx context.Context, component storage.Component, trigger string, forceSecurityResolve bool) (*storage.CheckRecord, error) {
+	run := &storage.ComponentCheckRun{
+		ComponentID:    component.ID,
+		TriggerType:    trigger,
+		Status:         "running",
+		VersionStatus:  "running",
+		SecurityStatus: "queued",
+	}
+	if err := s.store.CreateComponentCheckRun(ctx, run); err != nil {
+		return nil, err
+	}
+	log.Printf("component check run created run_id=%d component_id=%d trigger=%s", run.ID, component.ID, run.TriggerType)
+	record := s.checker.Check(ctx, component)
+	record.RunID = run.ID
+	if err := s.store.CreateCheckRecord(ctx, &record); err != nil {
+		s.finishComponentCheckRunFailed(context.Background(), run.ID, "failed", err)
+		return nil, err
+	}
+	if err := s.store.UpdateComponentCheckState(ctx, component, record); err != nil {
+		s.finishComponentCheckRunFailed(context.Background(), run.ID, record.Status, err)
+		return nil, err
+	}
+	if err := s.store.UpdateComponentCheckRunVersion(ctx, run.ID, record); err != nil {
+		s.finishComponentCheckRunFailed(context.Background(), run.ID, record.Status, err)
+		return nil, err
+	}
+	log.Printf("component check run version finished run_id=%d component_id=%d status=%s has_update=%t latest=%s previous=%s", run.ID, component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
+	s.enqueueSecuritySync(component, run.ID, record, forceSecurityResolve, trigger)
 	return &record, nil
 }
 
@@ -221,24 +252,42 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 		return nil, err
 	}
 	for _, component := range components {
+		checkRun := &storage.ComponentCheckRun{
+			ComponentID:    component.ID,
+			TriggerType:    triggerType,
+			Status:         "running",
+			VersionStatus:  "running",
+			SecurityStatus: "queued",
+		}
+		if err := s.store.CreateComponentCheckRun(ctx, checkRun); err != nil {
+			run.FailedCount++
+			continue
+		}
+		log.Printf("component check run created run_id=%d component_id=%d trigger=%s", checkRun.ID, component.ID, checkRun.TriggerType)
 		record := s.checker.Check(ctx, component)
+		record.RunID = checkRun.ID
 		if err := s.store.CreateCheckRecord(ctx, &record); err != nil {
+			s.finishComponentCheckRunFailed(context.Background(), checkRun.ID, "failed", err)
 			run.FailedCount++
 			continue
 		}
 		if err := s.store.UpdateComponentCheckState(ctx, component, record); err != nil {
+			s.finishComponentCheckRunFailed(context.Background(), checkRun.ID, record.Status, err)
 			run.FailedCount++
 			continue
 		}
-		if record.Status == "success" {
-			run.SuccessCount++
-			if record.LatestVersion != "" {
-				_ = s.notifyUpdate(ctx, component, record)
-			}
-			s.enqueueSecuritySync(component, false, "scheduler_run")
+		if err := s.store.UpdateComponentCheckRunVersion(ctx, checkRun.ID, record); err != nil {
+			s.finishComponentCheckRunFailed(context.Background(), checkRun.ID, record.Status, err)
+			run.FailedCount++
 			continue
 		}
-		s.enqueueSecuritySync(component, false, "scheduler_run")
+		log.Printf("component check run version finished run_id=%d component_id=%d status=%s has_update=%t latest=%s previous=%s", checkRun.ID, component.ID, record.Status, record.HasUpdate, record.LatestVersion, record.PreviousVersion)
+		if record.Status == "success" {
+			run.SuccessCount++
+			s.enqueueSecuritySync(component, checkRun.ID, record, false, "scheduler_run")
+			continue
+		}
+		s.enqueueSecuritySync(component, checkRun.ID, record, false, "scheduler_run")
 		run.FailedCount++
 	}
 	run.Status = "success"
@@ -250,6 +299,25 @@ func (s *Service) RunChecks(ctx context.Context, triggerType string) (*storage.S
 	}
 	log.Printf("run checks finished trigger=%s total=%d success=%d failed=%d duration=%s", triggerType, run.TotalCount, run.SuccessCount, run.FailedCount, time.Since(startedAt).Round(time.Millisecond))
 	return run, nil
+}
+
+func (s *Service) finishComponentCheckRunFailed(ctx context.Context, runID int64, versionStatus string, err error) {
+	if runID <= 0 || err == nil {
+		return
+	}
+	status := "failed"
+	if versionStatus == "success" {
+		status = "partial_failed"
+	}
+	if finishErr := s.store.FinishComponentCheckRun(ctx, &storage.ComponentCheckRun{
+		ID:             runID,
+		Status:         status,
+		VersionStatus:  versionStatus,
+		SecurityStatus: "skipped",
+		ErrorMessage:   err.Error(),
+	}); finishErr != nil {
+		log.Printf("component check run finish failed run_id=%d err=%v", runID, finishErr)
+	}
 }
 
 func (s *Service) ListCheckRecords(ctx context.Context, opts storage.ListOptions) ([]storage.CheckRecord, int, error) {
@@ -358,20 +426,35 @@ func (s *Service) SendTestNotification(ctx context.Context, recipient string) er
 	})
 }
 
-func (s *Service) enqueueSecuritySync(component storage.Component, forceResolve bool, trigger string) {
+func (s *Service) enqueueSecuritySync(component storage.Component, runID int64, checkRecord storage.CheckRecord, forceResolve bool, trigger string) {
 	if s.security == nil {
+		if runID > 0 {
+			if err := s.notifyCheckRunSummary(context.Background(), component, checkRecord, storage.ComponentSecurityProfile{}, nil, runID, "skipped", "security checker unavailable"); err != nil {
+				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", component.ID, runID, err)
+			}
+		}
 		return
 	}
-	job := securityJob{component: component, forceResolve: forceResolve, trigger: trigger}
+	job := securityJob{component: component, runID: runID, checkRecord: checkRecord, forceResolve: forceResolve, trigger: trigger}
 	s.securityMu.Lock()
 	if _, running := s.securityRunning[component.ID]; running {
 		s.securityMu.Unlock()
 		log.Printf("security sync skipped component_id=%d trigger=%s already running", component.ID, trigger)
+		if runID > 0 {
+			if err := s.notifyCheckRunSummary(context.Background(), component, checkRecord, storage.ComponentSecurityProfile{}, nil, runID, "skipped", "security sync already running"); err != nil {
+				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", component.ID, runID, err)
+			}
+		}
 		return
 	}
 	if _, queued := s.securityQueued[component.ID]; queued {
 		s.securityMu.Unlock()
 		log.Printf("security sync skipped component_id=%d trigger=%s already queued", component.ID, trigger)
+		if runID > 0 {
+			if err := s.notifyCheckRunSummary(context.Background(), component, checkRecord, storage.ComponentSecurityProfile{}, nil, runID, "skipped", "security sync already queued"); err != nil {
+				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", component.ID, runID, err)
+			}
+		}
 		return
 	}
 	s.securityQueued[component.ID] = struct{}{}
@@ -444,11 +527,30 @@ func (s *Service) runSecuritySync(job securityJob) {
 	report, err := s.security.Check(ctx, job.component, *profile, job.forceResolve)
 	if err != nil {
 		log.Printf("security check failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
+		if job.runID > 0 {
+			if notifyErr := s.notifyCheckRunSummary(context.Background(), job.component, job.checkRecord, storage.ComponentSecurityProfile{}, nil, job.runID, "failed", err.Error()); notifyErr != nil {
+				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", job.component.ID, job.runID, notifyErr)
+			}
+		}
 		return
 	}
+	for i := range report.Records {
+		report.Records[i].RunID = job.runID
+	}
+	log.Printf("component check run security finished run_id=%d component_id=%d status=%s records=%d suggested_version=%s", job.runID, job.component.ID, report.Profile.LastSecurityStatus, len(report.Records), report.Profile.SecuritySuggestedVersion)
 	if err := s.store.SaveComponentSecurityState(ctx, report.Profile, report.Records); err != nil {
 		log.Printf("security state save failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
+		if job.runID > 0 {
+			if notifyErr := s.notifyCheckRunSummary(context.Background(), job.component, job.checkRecord, storage.ComponentSecurityProfile{}, nil, job.runID, "failed", err.Error()); notifyErr != nil {
+				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", job.component.ID, job.runID, notifyErr)
+			}
+		}
 		return
+	}
+	if job.runID > 0 {
+		if err := s.notifyCheckRunSummary(context.Background(), job.component, job.checkRecord, report.Profile, report.Records, job.runID, report.Profile.LastSecurityStatus, ""); err != nil {
+			log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", job.component.ID, job.runID, err)
+		}
 	}
 	if report.Profile.SecuritySuggestedVersion != "" {
 		log.Printf("security suggested version component_id=%d trigger=%s version=%s", job.component.ID, job.trigger, report.Profile.SecuritySuggestedVersion)
@@ -484,44 +586,67 @@ func (s *Service) DashboardSummary(ctx context.Context) (*storage.DashboardSumma
 	return summary, nil
 }
 
-func (s *Service) notifyUpdate(ctx context.Context, component storage.Component, record storage.CheckRecord) error {
+func (s *Service) notifyCheckRunSummary(ctx context.Context, component storage.Component, record storage.CheckRecord, profile storage.ComponentSecurityProfile, records []storage.ComponentSecurityRecord, runID int64, securityStatus, runError string) error {
+	affectedCount := countAffectedSecurityRecords(records)
+	fingerprint := checkRunFingerprint(record, profile, records, securityStatus)
+	log.Printf("notify check run summary started run_id=%d component_id=%d version_status=%s security_status=%s affected=%d fingerprint=%s", runID, component.ID, record.Status, securityStatus, affectedCount, fingerprint)
+	run := &storage.ComponentCheckRun{
+		ID:                         runID,
+		Status:                     "success",
+		SecurityStatus:             securityStatus,
+		SecuritySuggestedVersion:   profile.SecuritySuggestedVersion,
+		AffectedVulnerabilityCount: affectedCount,
+		NotificationFingerprint:    fingerprint,
+		ErrorMessage:               runError,
+	}
+	if record.Status != "" && record.Status != "success" {
+		run.Status = "failed"
+	} else if securityStatus == "failed" || securityStatus == "check_failed" {
+		run.Status = "partial_failed"
+	}
+
 	targets, err := s.store.ListSubscriberNotificationTargets(ctx, component.ID)
 	if err != nil {
+		run.ErrorMessage = err.Error()
+		_ = s.store.FinishComponentCheckRun(ctx, run)
 		return err
 	}
 	if len(targets) == 0 {
-		return nil
+		log.Printf("notify check run summary skipped run_id=%d component_id=%d reason=no_subscribers", runID, component.ID)
 	}
 	var errs []error
-	sentCount := 0
+	sentAny := false
 	skippedCount := 0
 	for _, target := range targets {
 		baseline := target.LastNotifiedVersion
 		if baseline == "" {
 			baseline = component.CurrentVersion
 		}
-		subject := fmt.Sprintf("[开源组件更新] %s %s -> %s", component.Name, baseline, record.LatestVersion)
-		body := buildMailBody(component, record)
-		if !version.IsNewer(record.LatestVersion, baseline) {
+		hasVersionUpdate := record.Status == "success" && record.LatestVersion != "" && version.IsNewer(record.LatestVersion, baseline)
+		hasSecurityRisk := affectedCount > 0
+		if !hasVersionUpdate && !hasSecurityRisk {
 			skippedCount++
+			log.Printf("notify check run summary skipped recipient=%s run_id=%d component_id=%d reason=no_change baseline=%s latest=%s affected=%d", target.Email, runID, component.ID, baseline, record.LatestVersion, affectedCount)
 			continue
 		}
-		sent, err := s.store.HasSentNotification(ctx, component.ID, record.LatestVersion, target.Email)
+		sent, err := s.store.HasSentNotificationFingerprint(ctx, component.ID, "component_check_summary", fingerprint, target.Email)
 		if err != nil {
 			errs = append(errs, err)
-			log.Printf("notify update failed component_id=%d name=%s version=%s recipient=%s err=%v", component.ID, component.Name, record.LatestVersion, target.Email, err)
 			continue
 		}
 		if sent {
-			if err := s.store.UpsertSubscriberComponentProgress(ctx, target.SubscriberID, component.ID, record.LatestVersion); err != nil {
-				errs = append(errs, err)
-				log.Printf("notify update progress sync failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
-				continue
-			}
 			skippedCount++
+			log.Printf("notify check run summary skipped recipient=%s run_id=%d component_id=%d reason=duplicate fingerprint=%s", target.Email, runID, component.ID, fingerprint)
+			if hasVersionUpdate {
+				if err := s.store.UpsertSubscriberComponentProgress(ctx, target.SubscriberID, component.ID, record.LatestVersion); err != nil {
+					errs = append(errs, err)
+				}
+			}
 			continue
 		}
-		log.Printf("notify update started component_id=%d name=%s version=%s recipient=%s", component.ID, component.Name, record.LatestVersion, target.Email)
+		subject := buildCheckRunSubject(component, hasVersionUpdate, hasSecurityRisk)
+		body := buildCheckRunMailBody(component, record, profile, affectedCount, hasVersionUpdate, hasSecurityRisk)
+		log.Printf("notify check run summary sending recipient=%s run_id=%d component_id=%d version_update=%t security_risk=%t", target.Email, runID, component.ID, hasVersionUpdate, hasSecurityRisk)
 		sendErr := s.notifier.Send(notifier.Message{
 			To:      []string{target.Email},
 			Subject: subject,
@@ -537,12 +662,22 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 		} else {
 			now := time.Now().UTC()
 			sentAt = &now
-			sentCount++
+			sentAny = true
+		}
+		versionKey := record.LatestVersion
+		if versionKey == "" {
+			versionKey = profile.SecuritySuggestedVersion
+		}
+		if versionKey == "" && len(fingerprint) >= 12 {
+			versionKey = fingerprint[:12]
 		}
 		if err := s.store.CreateNotificationRecord(ctx, &storage.NotificationRecord{
+			RunID:          runID,
 			ComponentID:    component.ID,
 			CheckRecordID:  record.ID,
-			Version:        record.LatestVersion,
+			Type:           "component_check_summary",
+			Fingerprint:    fingerprint,
+			Version:        versionKey,
 			RecipientEmail: target.Email,
 			Subject:        subject,
 			Body:           body,
@@ -551,38 +686,71 @@ func (s *Service) notifyUpdate(ctx context.Context, component storage.Component,
 			SentAt:         sentAt,
 		}); err != nil {
 			errs = append(errs, err)
-			log.Printf("notify update record write failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
+			log.Printf("notify check run record write failed component_id=%d run_id=%d recipient=%s err=%v", component.ID, runID, target.Email, err)
 		}
-		if sendErr == nil {
+		if sendErr == nil && hasVersionUpdate {
 			if err := s.store.UpsertSubscriberComponentProgress(ctx, target.SubscriberID, component.ID, record.LatestVersion); err != nil {
 				errs = append(errs, err)
-				log.Printf("notify update progress update failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, err)
 			}
 		}
 		if sendErr != nil {
-			log.Printf("notify update failed component_id=%d version=%s recipient=%s err=%v", component.ID, record.LatestVersion, target.Email, sendErr)
+			log.Printf("notify check run summary failed recipient=%s run_id=%d component_id=%d err=%v", target.Email, runID, component.ID, sendErr)
 		} else {
-			log.Printf("notify update finished component_id=%d version=%s recipient=%s", component.ID, record.LatestVersion, target.Email)
+			log.Printf("notify check run summary finished recipient=%s run_id=%d component_id=%d", target.Email, runID, component.ID)
 		}
 	}
+	if sentAny {
+		now := time.Now().UTC()
+		run.NotifiedAt = &now
+	}
+	if len(errs) > 0 {
+		run.ErrorMessage = errors.Join(errs...).Error()
+		if run.Status == "success" {
+			run.Status = "partial_failed"
+		}
+	}
+	if err := s.store.FinishComponentCheckRun(ctx, run); err != nil {
+		errs = append(errs, err)
+	}
+	log.Printf("component check run finished run_id=%d component_id=%d status=%s security_status=%s affected=%d notified=%t skipped=%d", runID, component.ID, run.Status, run.SecurityStatus, run.AffectedVulnerabilityCount, sentAny, skippedCount)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
-	}
-	if sentCount == 0 && skippedCount > 0 {
-		return nil
 	}
 	return nil
 }
 
-func buildMailBody(component storage.Component, record storage.CheckRecord) string {
+func buildCheckRunSubject(component storage.Component, hasVersionUpdate, hasSecurityRisk bool) string {
+	switch {
+	case hasVersionUpdate && hasSecurityRisk:
+		return fmt.Sprintf("[开源组件提醒] %s 发现新版本和安全风险", component.Name)
+	case hasSecurityRisk:
+		return fmt.Sprintf("[开源组件安全] %s 发现安全风险", component.Name)
+	default:
+		return fmt.Sprintf("[开源组件更新] %s 发现新版本", component.Name)
+	}
+}
+
+func buildCheckRunMailBody(component storage.Component, record storage.CheckRecord, profile storage.ComponentSecurityProfile, affectedCount int, hasVersionUpdate, hasSecurityRisk bool) string {
 	publishedAt := ""
 	if record.ReleasePublishedAt != nil {
 		publishedAt = record.ReleasePublishedAt.Format(time.RFC3339)
 	}
+	versionLine := "未发现新版本"
+	if hasVersionUpdate {
+		versionLine = fmt.Sprintf("%s -> %s", record.PreviousVersion, record.LatestVersion)
+	}
+	securityLine := "未发现安全风险"
+	if hasSecurityRisk {
+		securityLine = fmt.Sprintf("发现 %d 个漏洞", affectedCount)
+		if profile.SecuritySuggestedVersion != "" {
+			securityLine += fmt.Sprintf("，建议升级至 %s", profile.SecuritySuggestedVersion)
+		}
+	}
 	return fmt.Sprintf(`组件名称：%s
 仓库地址：%s
 当前使用版本：%s
-最新发布版本：%s
+版本检查：%s
+安全检查：%s
 发布时间：%s
 GitHub 链接：%s
 
@@ -590,8 +758,40 @@ Release Note 摘要：
 %s
 
 建议动作：
-- 请订阅人评估是否需要升级
-- 检查当前项目是否受到影响
-- 如涉及安全修复，建议优先处理
-`, component.Name, component.RepoURL, component.CurrentVersion, record.LatestVersion, publishedAt, record.ReleaseURL, record.ReleaseNoteSummary)
+- 结合版本更新和安全风险统一评估升级
+- 如存在安全风险，建议优先确认受影响范围
+- 详情请进入系统查看组件和漏洞信息
+`, component.Name, component.RepoURL, component.CurrentVersion, versionLine, securityLine, publishedAt, record.ReleaseURL, record.ReleaseNoteSummary)
+}
+
+func countAffectedSecurityRecords(records []storage.ComponentSecurityRecord) int {
+	count := 0
+	for _, record := range records {
+		if record.RiskStatus == "affected" {
+			count++
+		}
+	}
+	return count
+}
+
+func checkRunFingerprint(record storage.CheckRecord, profile storage.ComponentSecurityProfile, records []storage.ComponentSecurityRecord, securityStatus string) string {
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.RiskStatus != "affected" {
+			continue
+		}
+		if record.Identifier != "" {
+			ids = append(ids, record.Identifier)
+		}
+	}
+	sort.Strings(ids)
+	payload := strings.Join([]string{
+		record.LatestVersion,
+		record.Status,
+		securityStatus,
+		profile.SecuritySuggestedVersion,
+		strings.Join(ids, ","),
+	}, "|")
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
 }

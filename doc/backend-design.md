@@ -148,6 +148,8 @@ backend/
 ```text
 读取组件信息
       ↓
+创建 component_check_runs 批次
+      ↓
 判断组件是否启用
       ↓
 按检查策略查询 GitHub Release 或 Tag
@@ -158,9 +160,13 @@ backend/
       ↓
 写入 check_records
       ↓
-按订阅人比较 last_notified_version，必要时发送邮件
+异步执行 OSV 漏洞检查
       ↓
-写入 notification_records
+写入 component_security_profiles / component_security_records
+      ↓
+聚合版本检查和安全检查结果
+      ↓
+按订阅人和 fingerprint 判断是否需要发送一封邮件
       ↓
 更新 components 最近状态字段
 ```
@@ -171,7 +177,7 @@ backend/
 - 如果 latest release 不存在或仓库未使用 Release，则读取最新 Tag。
 - 版本号比较前移除常见前缀 `v`。
 - 无法解析为语义化版本时，可先按发布时间判断新旧。
-- 同一组件同一版本对同一收件人已经存在成功通知记录时，不再重复发送。
+- 同一组件、收件人、通知类型和 fingerprint 已经存在成功通知记录时，不再重复发送。
 - 订阅人与组件的关联关系会保存 `last_notified_version`，用于判断该订阅人是否已经收到过更高版本。
 
 ## 6. 邮件通知
@@ -179,7 +185,7 @@ backend/
 邮件标题：
 
 ```text
-[开源组件更新] protobuf 3.20.1 -> 3.21.0
+[开源组件提醒] protobuf 发现新版本和安全风险
 ```
 
 邮件正文需要包含：
@@ -187,7 +193,9 @@ backend/
 - 组件名称。
 - GitHub 仓库。
 - 当前内部使用版本。
-- 最新上游版本。
+- 版本检查结果。
+- 安全检查结果。
+- 建议升级版本。
 - 发布时间。
 - Release Note 摘要。
 - GitHub 链接。
@@ -198,9 +206,10 @@ backend/
 - 订阅人可选择接收全部组件通知。
 - 组件订阅人只接收对应组件通知。
 - 启用状态的订阅人邮箱需要接收。
-- 通知去重按 `组件 + 收件人 + 版本` 判断。
+- 通知去重按 `组件 + 收件人 + 通知类型 + fingerprint` 判断。
 - 每个订阅人与组件的关联关系会记录 `last_notified_version`，用于推进该订阅人的版本进度。
 - 新订阅人加入后，仅会收到其基线版本之后出现的新版本通知。
+- 漏洞状态使用 fingerprint 去重；新订阅人在后续检查中如果还未收到过当前漏洞状态，会收到一次安全风险通知。
 
 ## 7. 错误处理
 

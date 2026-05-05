@@ -109,6 +109,9 @@ GET /api/components?page=1&page_size=20&keyword=protobuf&enabled=true
 | enabled | boolean | 是否启用 |
 | last_check_status | string | 最近检查状态 |
 | last_checked_at | string | 最近检查时间 |
+| security_status | string | 最近漏洞检查状态 |
+| security_suggested_version | string | 最近建议升级版本 |
+| security_checked_at | string | 最近漏洞检查时间 |
 | updated_at | string | 更新时间 |
 
 ### 3.2 新增组件
@@ -151,11 +154,14 @@ PUT /api/components/{id}
 POST /api/components/{id}/check
 ```
 
+该接口会创建一轮组件检查运行：先执行版本检查并返回版本检查记录，再异步执行漏洞检查和聚合通知。
+
 响应示例：
 
 ```json
 {
   "id": 101,
+  "run_id": 301,
   "component_id": 1,
   "source": "release",
   "previous_version": "3.20.1",
@@ -335,6 +341,7 @@ GET /api/check-records?page=1&page_size=20&component_id=1&status=success&has_upd
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | id | number | 检查记录 ID |
+| run_id | number | 组件检查运行 ID |
 | component_id | number | 组件 ID |
 | component_name | string | 组件名称 |
 | source | string | `release` 或 `tag` |
@@ -362,10 +369,13 @@ GET /api/notification-records?page=1&page_size=20&component_id=1&status=sent
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | id | number | 通知记录 ID |
+| run_id | number | 组件检查运行 ID |
 | component_id | number | 组件 ID |
 | component_name | string | 组件名称 |
-| check_record_id | number | 检查记录 ID |
-| version | string | 通知版本 |
+| check_record_id | number | 版本检查记录 ID，可能为空 |
+| notification_type | string | 通知类型，当前为 `component_check_summary` |
+| fingerprint | string | 通知去重指纹 |
+| version | string | 通知对应的最新版本或当前版本 |
 | recipient_email | string | 收件人邮箱 |
 | subject | string | 邮件标题 |
 | status | string | `sent` 或 `failed` |
@@ -435,6 +445,7 @@ GET /api/mail/status
 | --- | --- |
 | success | 检查成功 |
 | failed | 检查失败 |
+| partial_failed | 部分流程失败 |
 | skipped | 跳过检查 |
 
 ### 7.3 notification status

@@ -55,7 +55,7 @@ frontend/
 - 组件。
 - 当前版本。
 - 最新版本。
-- 是否通知。
+- 最近通知状态。
 - 最新检查时间。
 - 漏洞风险。
 
@@ -157,13 +157,14 @@ frontend/
 
 ### 2.5 检查记录
 
-用于查看每次版本检查结果。
+用于查看每次版本检查结果。单个组件检查还会关联一轮漏洞检查和聚合通知。
 
 列表字段：
 
 | 字段 | 说明 |
 | --- | --- |
 | component_name | 组件名称 |
+| run_id | 组件检查运行 ID |
 | source | 数据来源，Release 或 Tag |
 | previous_version | 检查前记录版本 |
 | latest_version | 本次检查到的最新版本 |
@@ -180,14 +181,15 @@ frontend/
 
 ### 2.6 通知记录
 
-用于查看邮件发送记录。
+用于查看邮件发送记录。当前邮件是版本检查和漏洞检查的聚合通知。
 
 列表字段：
 
 | 字段 | 说明 |
 | --- | --- |
 | component_name | 组件名称 |
-| version | 通知版本 |
+| notification_type | 通知类型 |
+| version | 通知对应的最新版本或当前版本 |
 | recipient_email | 收件人 |
 | status | 发送状态 |
 | error_message | 失败原因 |
@@ -231,6 +233,7 @@ export interface Subscriber {
 
 export interface CheckRecord {
   id: number;
+  runId?: number;
   componentId: number;
   source: 'release' | 'tag';
   previousVersion?: string;
@@ -247,8 +250,11 @@ export interface CheckRecord {
 
 export interface NotificationRecord {
   id: number;
+  runId?: number;
   componentId: number;
-  checkRecordId: number;
+  checkRecordId?: number;
+  notificationType: 'component_check_summary';
+  fingerprint?: string;
   version: string;
   recipientEmail: string;
   subject: string;
