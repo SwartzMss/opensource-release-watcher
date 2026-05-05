@@ -148,6 +148,7 @@ export interface RuntimeStatus {
   github_token_message?: string;
   proxy_status: string;
   proxy_message?: string;
+  checked_at?: string;
 }
 
 export interface SystemRun {

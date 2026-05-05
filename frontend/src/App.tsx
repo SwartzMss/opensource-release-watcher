@@ -351,14 +351,17 @@ function Dashboard({
         api.checkRecords({ page_size: 8, has_update: true }),
         api.components({ page_size: 100 }),
       ]);
-      const updateNotifications = await Promise.all(
-        nextCheckRecords.items.slice(0, 5).map(item => {
+      const updateRows = nextCheckRecords.items.slice(0, 5);
+      const updateComponentIds = Array.from(new Set(updateRows.map(item => item.component_id)));
+      const updateNotifications = await Promise.all([
+        ...updateRows.map(item => {
           const params = item.run_id
             ? { run_id: item.run_id, page_size: 20 }
             : { check_record_id: item.id, page_size: 20 };
           return api.notifications(params);
         }),
-      );
+        ...updateComponentIds.map(componentId => api.notifications({ component_id: componentId, page_size: 50 })),
+      ]);
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setMailStatus(nextMailStatus);
@@ -398,12 +401,12 @@ function Dashboard({
     {
       label: '代理设置',
       value: runtimeStatus?.proxy_status ?? '待检测',
-      extra: runtimeStatus?.proxy_message || '',
+      extra: statusExtra(runtimeStatus?.proxy_message, runtimeStatus?.checked_at),
     },
     {
       label: 'GitHub Token',
       value: runtimeStatus?.github_token_status ?? '待检测',
-      extra: runtimeStatus?.github_token_message ?? '',
+      extra: statusExtra(runtimeStatus?.github_token_message, runtimeStatus?.checked_at),
     },
     {
       label: '调度状态',
@@ -425,6 +428,7 @@ function Dashboard({
 
   const notificationByCheckRecordId = new Map<number, NotificationRecord[]>();
   const notificationByRunId = new Map<number, NotificationRecord[]>();
+  const notificationByComponentVersion = new Map<string, NotificationRecord[]>();
   notifications.forEach(item => {
     if (item.check_record_id) {
       const bucket = notificationByCheckRecordId.get(item.check_record_id);
@@ -442,12 +446,22 @@ function Dashboard({
         notificationByRunId.set(item.run_id, [item]);
       }
     }
+    if (item.version) {
+      const key = `${item.component_id}|${item.version}`;
+      const bucket = notificationByComponentVersion.get(key);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        notificationByComponentVersion.set(key, [item]);
+      }
+    }
   });
 
   const recentUpdateRows = recentUpdates.map(item => {
     const relatedNotifications = [
       ...(item.run_id ? notificationByRunId.get(item.run_id) ?? [] : []),
       ...(notificationByCheckRecordId.get(item.id) ?? []),
+      ...(notificationByComponentVersion.get(`${item.component_id}|${item.latest_version}`) ?? []),
     ];
     const notificationMeta = relatedNotifications.some(notification => notification.status === 'sent')
       ? { label: '已通知', tone: 'success' as const }
@@ -2064,6 +2078,13 @@ function formatClock(value?: string) {
     second: '2-digit',
     hour12: false,
   });
+}
+
+function statusExtra(message?: string, checkedAt?: string) {
+  const parts = [];
+  if (message) parts.push(message);
+  if (checkedAt) parts.push(`检测时间：${formatClock(checkedAt)}`);
+  return parts.join('；');
 }
 
 function formatPercent(value: number | null) {

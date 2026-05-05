@@ -37,6 +37,8 @@ type Service struct {
 	securityMu      sync.Mutex
 	securityQueued  map[int64]struct{}
 	securityRunning map[int64]struct{}
+	runtimeMu       sync.RWMutex
+	runtimeStatus   RuntimeStatus
 }
 
 type securityJob struct {
@@ -63,8 +65,13 @@ func New(store *storage.Store, checker *checker.Checker, securityChecker *securi
 		securityQueue:   make(chan securityJob, 128),
 		securityQueued:  make(map[int64]struct{}),
 		securityRunning: make(map[int64]struct{}),
+		runtimeStatus: RuntimeStatus{
+			GitHubTokenStatus: "待检测",
+			ProxyStatus:       "待检测",
+		},
 	}
 	svc.startSecurityWorkers(2)
+	svc.startRuntimeStatusProbe()
 	return svc
 }
 
@@ -348,9 +355,31 @@ type RuntimeStatus struct {
 	GitHubTokenMessage string `json:"github_token_message,omitempty"`
 	ProxyStatus        string `json:"proxy_status"`
 	ProxyMessage       string `json:"proxy_message,omitempty"`
+	CheckedAt          string `json:"checked_at,omitempty"`
 }
 
 func (s *Service) RuntimeStatus(ctx context.Context) (RuntimeStatus, error) {
+	s.runtimeMu.RLock()
+	status := s.runtimeStatus
+	s.runtimeMu.RUnlock()
+	return status, nil
+}
+
+func (s *Service) startRuntimeStatusProbe() {
+	go func() {
+		s.refreshRuntimeStatus(context.Background())
+		ticker := time.NewTicker(2 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.refreshRuntimeStatus(context.Background())
+		}
+	}()
+}
+
+func (s *Service) refreshRuntimeStatus(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, 45*time.Second)
+	defer cancel()
+	log.Printf("runtime status probe started")
 	status := RuntimeStatus{
 		GitHubTokenStatus: "未配置",
 		ProxyStatus:       "未配置",
@@ -375,7 +404,11 @@ func (s *Service) RuntimeStatus(ctx context.Context) (RuntimeStatus, error) {
 	} else {
 		status.GitHubTokenMessage = "GITHUB_TOKEN 未配置，GitHub API 仍会使用匿名额度"
 	}
-	return status, nil
+	status.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+	s.runtimeMu.Lock()
+	s.runtimeStatus = status
+	s.runtimeMu.Unlock()
+	log.Printf("runtime status probe finished proxy=%s github_token=%s checked_at=%s", status.ProxyStatus, status.GitHubTokenStatus, status.CheckedAt)
 }
 
 func (s *Service) hasProxyConfig() bool {
@@ -383,28 +416,43 @@ func (s *Service) hasProxyConfig() bool {
 }
 
 func probeGitHubEndpoint(ctx context.Context, token string, authenticated bool) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/rate_limit", nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "opensource-release-watcher")
-	if authenticated {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if authenticated {
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/rate_limit", nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "opensource-release-watcher")
+		if authenticated {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+		} else {
+			func() {
+				defer resp.Body.Close()
+				if authenticated && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+					lastErr = fmt.Errorf("github token probe returned %s", resp.Status)
+					return
+				}
+				lastErr = nil
+			}()
+		}
+		if lastErr == nil {
 			return nil
 		}
-		return fmt.Errorf("github token probe returned %s", resp.Status)
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
 	}
-	return nil
+	return lastErr
 }
 
 func (s *Service) SendTestNotification(ctx context.Context, recipient string) error {

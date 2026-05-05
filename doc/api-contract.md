@@ -440,6 +440,26 @@ GET /api/mail/status
 }
 ```
 
+### 6.5 查询运行状态
+
+```http
+GET /api/system/status
+```
+
+该接口只返回后端缓存的运行状态，不会在每次请求时实时访问 GitHub。服务启动后会立即异步检测一次，之后每 2 小时刷新一次。
+
+响应：
+
+```json
+{
+  "proxy_status": "正常",
+  "proxy_message": "",
+  "github_token_status": "正常",
+  "github_token_message": "",
+  "checked_at": "2026-05-05T08:00:00Z"
+}
+```
+
 ## 7. 枚举值
 
 ### 7.1 check_strategy
