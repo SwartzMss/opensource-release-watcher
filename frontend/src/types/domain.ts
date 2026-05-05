@@ -93,6 +93,7 @@ export interface DashboardSummary {
 
 export interface CheckRecord {
   id: number;
+  run_id?: number;
   component_id: number;
   component_name: string;
   source: 'release' | 'tag' | '';
@@ -120,9 +121,12 @@ export interface LatestVersionInfo {
 
 export interface NotificationRecord {
   id: number;
+  run_id?: number;
   component_id: number;
   component_name: string;
-  check_record_id: number;
+  check_record_id?: number;
+  notification_type?: string;
+  fingerprint?: string;
   version: string;
   recipient_email: string;
   subject: string;

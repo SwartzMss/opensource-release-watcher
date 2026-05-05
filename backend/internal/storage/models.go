@@ -174,6 +174,8 @@ type ListOptions struct {
 	Enabled        *bool
 	Status         string
 	ComponentID    int64
+	RunID          int64
+	CheckRecordID  int64
 	RecipientEmail string
 	HasUpdate      *bool
 	SecurityStatus string

@@ -343,21 +343,28 @@ function Dashboard({
   async function load() {
     setLoading(true);
     try {
-      const [nextSummary, nextRuns, nextMailStatus, nextRuntimeStatus, nextCheckRecords, nextNotifications, nextComponents] = await Promise.all([
+      const [nextSummary, nextRuns, nextMailStatus, nextRuntimeStatus, nextCheckRecords, nextComponents] = await Promise.all([
         api.dashboard(),
         api.systemRuns(),
         api.mailStatus(),
         api.systemStatus(),
         api.checkRecords({ page_size: 8, has_update: true }),
-        api.notifications({ page_size: 8 }),
         api.components({ page_size: 100 }),
       ]);
+      const updateNotifications = await Promise.all(
+        nextCheckRecords.items.slice(0, 5).map(item => {
+          const params = item.run_id
+            ? { run_id: item.run_id, page_size: 20 }
+            : { check_record_id: item.id, page_size: 20 };
+          return api.notifications(params);
+        }),
+      );
       setSummary(nextSummary);
       setRuns(nextRuns.items);
       setMailStatus(nextMailStatus);
       setRuntimeStatus(nextRuntimeStatus);
       setCheckRecords(nextCheckRecords.items);
-      setNotifications(nextNotifications.items);
+      setNotifications(updateNotifications.flatMap(page => page.items));
       setComponents(nextComponents.items);
     } catch (error) {
       message.error(formatErrorMessage(error));
@@ -417,17 +424,31 @@ function Dashboard({
   ];
 
   const notificationByCheckRecordId = new Map<number, NotificationRecord[]>();
+  const notificationByRunId = new Map<number, NotificationRecord[]>();
   notifications.forEach(item => {
-    const bucket = notificationByCheckRecordId.get(item.check_record_id);
-    if (bucket) {
-      bucket.push(item);
-    } else {
-      notificationByCheckRecordId.set(item.check_record_id, [item]);
+    if (item.check_record_id) {
+      const bucket = notificationByCheckRecordId.get(item.check_record_id);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        notificationByCheckRecordId.set(item.check_record_id, [item]);
+      }
+    }
+    if (item.run_id) {
+      const bucket = notificationByRunId.get(item.run_id);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        notificationByRunId.set(item.run_id, [item]);
+      }
     }
   });
 
   const recentUpdateRows = recentUpdates.map(item => {
-    const relatedNotifications = notificationByCheckRecordId.get(item.id) ?? [];
+    const relatedNotifications = [
+      ...(item.run_id ? notificationByRunId.get(item.run_id) ?? [] : []),
+      ...(notificationByCheckRecordId.get(item.id) ?? []),
+    ];
     const notificationMeta = relatedNotifications.some(notification => notification.status === 'sent')
       ? { label: '已通知', tone: 'success' as const }
       : relatedNotifications.some(notification => notification.status === 'failed')

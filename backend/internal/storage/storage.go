@@ -929,6 +929,14 @@ func (s *Store) ListNotificationRecords(ctx context.Context, opts ListOptions) (
 		clauses = append(clauses, "nr.component_id = ?")
 		args = append(args, opts.ComponentID)
 	}
+	if opts.RunID > 0 {
+		clauses = append(clauses, "nr.run_id = ?")
+		args = append(args, opts.RunID)
+	}
+	if opts.CheckRecordID > 0 {
+		clauses = append(clauses, "nr.check_record_id = ?")
+		args = append(args, opts.CheckRecordID)
+	}
 	if opts.Status != "" {
 		clauses = append(clauses, "nr.status = ?")
 		args = append(args, opts.Status)

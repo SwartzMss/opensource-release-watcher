@@ -814,6 +814,8 @@ func listOptions(req *http.Request) storage.ListOptions {
 		Keyword:        query.Get("keyword"),
 		Status:         query.Get("status"),
 		ComponentID:    int64(intQuery(query.Get("component_id"), 0)),
+		RunID:          int64(intQuery(query.Get("run_id"), 0)),
+		CheckRecordID:  int64(intQuery(query.Get("check_record_id"), 0)),
 		RecipientEmail: query.Get("recipient_email"),
 	}
 	if value := query.Get("enabled"); value != "" {

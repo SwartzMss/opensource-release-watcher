@@ -645,7 +645,7 @@ func (s *Service) notifyCheckRunSummary(ctx context.Context, component storage.C
 			continue
 		}
 		subject := buildCheckRunSubject(component, hasVersionUpdate, hasSecurityRisk)
-		body := buildCheckRunMailBody(component, record, profile, affectedCount, hasVersionUpdate, hasSecurityRisk)
+		body := buildCheckRunMailBody(component, record, profile, records, affectedCount, hasVersionUpdate, hasSecurityRisk)
 		log.Printf("notify check run summary sending recipient=%s run_id=%d component_id=%d version_update=%t security_risk=%t", target.Email, runID, component.ID, hasVersionUpdate, hasSecurityRisk)
 		sendErr := s.notifier.Send(notifier.Message{
 			To:      []string{target.Email},
@@ -730,7 +730,7 @@ func buildCheckRunSubject(component storage.Component, hasVersionUpdate, hasSecu
 	}
 }
 
-func buildCheckRunMailBody(component storage.Component, record storage.CheckRecord, profile storage.ComponentSecurityProfile, affectedCount int, hasVersionUpdate, hasSecurityRisk bool) string {
+func buildCheckRunMailBody(component storage.Component, record storage.CheckRecord, profile storage.ComponentSecurityProfile, records []storage.ComponentSecurityRecord, affectedCount int, hasVersionUpdate, hasSecurityRisk bool) string {
 	publishedAt := ""
 	if record.ReleasePublishedAt != nil {
 		publishedAt = record.ReleasePublishedAt.Format(time.RFC3339)
@@ -746,6 +746,7 @@ func buildCheckRunMailBody(component storage.Component, record storage.CheckReco
 			securityLine += fmt.Sprintf("，建议升级至 %s", profile.SecuritySuggestedVersion)
 		}
 	}
+	vulnerabilityDetails := buildVulnerabilityDetails(records)
 	return fmt.Sprintf(`组件名称：%s
 仓库地址：%s
 当前使用版本：%s
@@ -754,6 +755,9 @@ func buildCheckRunMailBody(component storage.Component, record storage.CheckReco
 发布时间：%s
 GitHub 链接：%s
 
+漏洞明细：
+%s
+
 Release Note 摘要：
 %s
 
@@ -761,7 +765,63 @@ Release Note 摘要：
 - 结合版本更新和安全风险统一评估升级
 - 如存在安全风险，建议优先确认受影响范围
 - 详情请进入系统查看组件和漏洞信息
-`, component.Name, component.RepoURL, component.CurrentVersion, versionLine, securityLine, publishedAt, record.ReleaseURL, record.ReleaseNoteSummary)
+`, component.Name, component.RepoURL, component.CurrentVersion, versionLine, securityLine, publishedAt, record.ReleaseURL, vulnerabilityDetails, record.ReleaseNoteSummary)
+}
+
+func buildVulnerabilityDetails(records []storage.ComponentSecurityRecord) string {
+	affected := make([]storage.ComponentSecurityRecord, 0, len(records))
+	for _, record := range records {
+		if record.RiskStatus == "affected" {
+			affected = append(affected, record)
+		}
+	}
+	if len(affected) == 0 {
+		return "- 本次未命中公开已知漏洞"
+	}
+	const maxMailVulnerabilities = 5
+	lines := make([]string, 0, minInt(len(affected), maxMailVulnerabilities)+1)
+	for i, record := range affected {
+		if i >= maxMailVulnerabilities {
+			lines = append(lines, fmt.Sprintf("- 还有 %d 个漏洞未在邮件中展开，请进入系统查看完整列表", len(affected)-maxMailVulnerabilities))
+			break
+		}
+		lines = append(lines, formatMailVulnerability(record))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatMailVulnerability(record storage.ComponentSecurityRecord) string {
+	identifier := strings.TrimSpace(record.Identifier)
+	if identifier == "" {
+		identifier = "未命名漏洞"
+	}
+	summary := strings.TrimSpace(record.Summary)
+	if summary == "" {
+		summary = "暂无摘要"
+	}
+	severity := strings.TrimSpace(record.Severity)
+	if severity == "" {
+		severity = "未知"
+	}
+	fixedVersion := strings.TrimSpace(record.FixedVersion)
+	if fixedVersion == "" {
+		fixedVersion = "暂无明确修复版本"
+	}
+	link := strings.TrimSpace(record.EvidenceURL)
+	if link == "" && record.Identifier != "" {
+		link = "https://osv.dev/vulnerability/" + record.Identifier
+	}
+	if link == "" {
+		link = "暂无链接"
+	}
+	return fmt.Sprintf("- %s：%s\n  严重性：%s\n  建议升级至：%s\n  链接：%s", identifier, summary, severity, fixedVersion, link)
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func countAffectedSecurityRecords(records []storage.ComponentSecurityRecord) int {

@@ -364,6 +364,16 @@ GET /api/check-records?page=1&page_size=20&component_id=1&status=success&has_upd
 GET /api/notification-records?page=1&page_size=20&component_id=1&status=sent
 ```
 
+可选筛选参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| component_id | number | 按组件筛选 |
+| run_id | number | 按组件检查运行筛选 |
+| check_record_id | number | 按版本检查记录筛选 |
+| recipient_email | string | 按收件人筛选 |
+| status | string | 按通知状态筛选 |
+
 响应字段：
 
 | 字段 | 类型 | 说明 |
