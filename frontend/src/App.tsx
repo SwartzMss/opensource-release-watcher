@@ -401,12 +401,12 @@ function Dashboard({
     {
       label: '代理设置',
       value: runtimeStatus?.proxy_status ?? '待检测',
-      extra: statusExtra(runtimeStatus?.proxy_message, runtimeStatus?.checked_at),
+      extra: statusExtra(runtimeStatus?.proxy_message),
     },
     {
       label: 'GitHub Token',
       value: runtimeStatus?.github_token_status ?? '待检测',
-      extra: statusExtra(runtimeStatus?.github_token_message, runtimeStatus?.checked_at),
+      extra: statusExtra(runtimeStatus?.github_token_message),
     },
     {
       label: '调度状态',
@@ -2055,11 +2055,8 @@ function formatClock(value?: string) {
   });
 }
 
-function statusExtra(message?: string, checkedAt?: string) {
-  const parts = [];
-  if (message) parts.push(message);
-  if (checkedAt) parts.push(`检测时间：${formatClock(checkedAt)}`);
-  return parts.join('；');
+function statusExtra(message?: string) {
+  return message ?? '';
 }
 
 function formatPercent(value: number | null) {
