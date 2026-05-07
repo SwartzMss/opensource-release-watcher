@@ -163,23 +163,32 @@ a {
   display: flex;
   justify-content: center;
   width: 100%;
-  padding: 14px 0 0;
+  padding: 16px 0 0;
 }
 
-.session .ant-btn,
-.mobile-drawer-session .ant-btn {
-  border: 0;
-  box-shadow: none;
-  color: var(--primary);
-  font-weight: 500;
-  padding-inline: 0;
+.logout-button.ant-btn {
+  border-color: var(--border-strong);
+  border-radius: 8px;
+  color: var(--muted-strong);
+  font-weight: 600;
+  min-height: 38px;
+  padding-inline: 16px;
 }
 
-.session .ant-btn:hover,
-.session .ant-btn:focus,
-.mobile-drawer-session .ant-btn:hover,
-.mobile-drawer-session .ant-btn:focus {
-  color: #174ea6;
+.session .logout-button.ant-btn,
+.mobile-drawer-session .logout-button.ant-btn {
+  width: 100%;
+}
+
+.logout-button.ant-btn:hover,
+.logout-button.ant-btn:focus {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.mobile-logout-button.ant-btn {
+  min-width: 56px;
+  padding-inline: 14px;
 }
 
 .nav {

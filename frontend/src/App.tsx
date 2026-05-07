@@ -207,7 +207,7 @@ export function App() {
           </button>
           <div className="mobile-topbar-actions">
             <Button className="mobile-menu-button" onClick={() => setMobileNavOpen(true)}>☰</Button>
-            <Button size="small" onClick={() => void logout()}>退出</Button>
+            <Button className="logout-button mobile-logout-button" onClick={() => void logout()}>退出</Button>
           </div>
         </header>
         <Drawer
@@ -218,7 +218,7 @@ export function App() {
           onClose={() => setMobileNavOpen(false)}
         >
           <div className="mobile-drawer-session">
-            <Button size="small" onClick={() => void logout()}>退出登录</Button>
+            <Button className="logout-button" onClick={() => void logout()}>退出登录</Button>
           </div>
           <nav className="nav mobile-nav">
             {navItems.map(([key, label]) => (
@@ -263,7 +263,7 @@ export function App() {
             </nav>
           </div>
           <div className="session">
-            <Button size="small" onClick={() => void logout()}>退出登录</Button>
+            <Button className="logout-button" onClick={() => void logout()}>退出登录</Button>
           </div>
         </div>
       </Layout.Sider>
