@@ -27,7 +27,14 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	store := &Store{db: db}
+	if err := store.configure(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := store.init(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -37,6 +44,15 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) configure(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+		PRAGMA busy_timeout = 10000;
+		PRAGMA journal_mode = WAL;
+		PRAGMA foreign_keys = ON;
+	`)
+	return err
 }
 
 func (s *Store) init(ctx context.Context) error {
@@ -636,7 +652,6 @@ func (s *Store) replaceGlobalSubscriberComponents(ctx context.Context, subscribe
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	existing := map[int64]string{}
 	for rows.Next() {
 		var componentID int64
@@ -647,6 +662,9 @@ func (s *Store) replaceGlobalSubscriberComponents(ctx context.Context, subscribe
 		existing[componentID] = version
 	}
 	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
 		return err
 	}
 	selected := map[int64]struct{}{}
