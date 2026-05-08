@@ -753,6 +753,7 @@ function Components({ isMobile }: { isMobile: boolean }) {
 function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [records, setRecords] = useState<ComponentSecurityRecord[]>([]);
+  const [affectedOptions, setAffectedOptions] = useState<Array<{ label: string; value: number }>>([]);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
   const [detail, setDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[]; selectedRecordId?: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -761,15 +762,22 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
     setLoading(true);
     try {
       const componentID = nextFilters.component_id ? Number(nextFilters.component_id) : undefined;
-      const [nextComponents, nextRecords] = await Promise.all([
+      const [nextComponents, nextRecords, optionRecords] = await Promise.all([
         api.components({ page_size: 100 }),
         api.securityRecords({
           page_size: 100,
+          risk_status: 'affected',
           component_id: componentID,
+        }),
+        api.securityRecords({
+          page_size: 100,
+          risk_status: 'affected',
         }),
       ]);
       setComponents(nextComponents.items);
       setRecords(nextRecords.items);
+      const nextComponentById = new Map(nextComponents.items.map(item => [item.id, item]));
+      setAffectedOptions(componentOptionsFromRecords(optionRecords.items, nextComponentById));
     } catch (error) {
       message.error(formatErrorMessage(error));
     } finally {
@@ -789,6 +797,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
     setDetail(prev => prev ? { ...prev, selectedRecordId: recordId } : prev);
   }
 
+  const componentById = new Map(components.map(item => [item.id, item]));
   const recordsByComponentId = new Map<number, ComponentSecurityRecord[]>();
   records.forEach(record => {
     const bucket = recordsByComponentId.get(record.component_id);
@@ -799,9 +808,10 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
     }
   });
 
-  const rows = components.map(component => {
-    const componentRecords = recordsByComponentId.get(component.id) ?? [];
-    const affectedRecords = componentRecords.filter(item => item.risk_status === 'affected');
+  const rows = Array.from(recordsByComponentId.entries()).map(([componentID, componentRecords]) => {
+    const fallbackRecord = componentRecords[0];
+    const component = componentById.get(componentID) ?? securityRecordComponentFallback(fallbackRecord);
+    const affectedRecords = componentRecords;
     const vulnerabilityIds = Array.from(new Set(affectedRecords.map(item => item.identifier).filter(Boolean))) as string[];
     const latestRecordAt = component.security_checked_at || componentRecords[0]?.created_at || '';
     return {
@@ -810,21 +820,15 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
       vulnerabilityIds,
       latestRecordAt,
     };
-  }).filter(row => {
-    if (row.component.security_status !== 'affected' && row.component.security_status !== 'check_failed') return false;
-    return true;
   }).sort((left, right) => {
     return (right.latestRecordAt || '').localeCompare(left.latestRecordAt || '');
   });
 
   const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
-  const componentOptions = components
-    .filter(item => item.security_status === 'affected' || item.security_status === 'check_failed')
-    .map(item => ({ label: item.name, value: item.id }));
 
   return (
     <section>
-      <PageHeader title="漏洞检查" description="查看有漏洞和检查失败的组件。" />
+      <PageHeader title="漏洞检查" description="查看当前命中漏洞的组件。" />
       <Card className="toolbar-card">
         <div className="filter-bar-head">
           <div>
@@ -856,7 +860,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               setFilters(next);
               void load(next);
             }}
-            options={componentOptions}
+            options={affectedOptions}
           />
         </Space>
       </Card>
@@ -865,7 +869,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
           {loading ? (
             <Card className="mobile-empty">加载中...</Card>
           ) : rows.length === 0 ? (
-            <Card className="mobile-empty">暂无漏洞或检查失败组件</Card>
+            <Card className="mobile-empty">暂无有漏洞组件</Card>
           ) : rows.map(row => (
             <Card key={row.component.id} className="mobile-item-card">
               <div className="mobile-item-head">
@@ -1003,6 +1007,43 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
       </Drawer>
     </section>
   );
+}
+
+function componentOptionsFromRecords(records: ComponentSecurityRecord[], componentById: Map<number, ComponentItem>) {
+  const seen = new Set<number>();
+  return records.flatMap(record => {
+    if (seen.has(record.component_id)) {
+      return [];
+    }
+    seen.add(record.component_id);
+    const component = componentById.get(record.component_id);
+    return [{
+      label: component?.name || record.component_name || `#${record.component_id}`,
+      value: record.component_id,
+    }];
+  });
+}
+
+function securityRecordComponentFallback(record: ComponentSecurityRecord): ComponentItem {
+  return {
+    id: record.component_id,
+    name: record.component_name || `#${record.component_id}`,
+    repo_url: '',
+    current_version: record.version,
+    latest_version: '',
+    check_strategy: 'release_first',
+    enabled: true,
+    last_check_status: '',
+    last_check_error: '',
+    security_status: record.risk_status,
+    security_reason: record.status_reason,
+    security_summary: record.summary,
+    security_checked_at: record.created_at,
+    security_suggested_version: record.fixed_version,
+    notes: '',
+    created_at: record.created_at,
+    updated_at: record.created_at,
+  };
 }
 
 function Subscribers({ isMobile }: { isMobile: boolean }) {
