@@ -818,7 +818,9 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   });
 
   const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
-  const componentOptions = components.map(item => ({ label: item.name, value: item.id }));
+  const componentOptions = components
+    .filter(item => item.security_status === 'affected' || item.security_status === 'check_failed')
+    .map(item => ({ label: item.name, value: item.id }));
 
   return (
     <section>
