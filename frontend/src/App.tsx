@@ -754,23 +754,18 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [records, setRecords] = useState<ComponentSecurityRecord[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number | boolean | undefined>>({});
-  const [selectedIssueStatus, setSelectedIssueStatus] = useState<'affected' | 'check_failed'>('affected');
   const [detail, setDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[]; selectedRecordId?: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function load(
-    nextFilters = filters,
-    nextStatus: 'affected' | 'check_failed' = selectedIssueStatus,
-  ) {
+  async function load(nextFilters = filters) {
     setLoading(true);
     try {
-      const componentID = nextFilters.component_id ? Number(nextFilters.component_id) : undefined;
+      const componentName = typeof nextFilters.component_name === 'string' ? nextFilters.component_name.trim() : '';
       const [nextComponents, nextRecords] = await Promise.all([
-        api.components({ page_size: 100 }),
+        api.components({ page_size: 100, keyword: componentName || undefined }),
         api.securityRecords({
           page_size: 100,
-          risk_status: nextStatus,
-          component_id: componentID,
+          keyword: componentName || undefined,
         }),
       ]);
       setComponents(nextComponents.items);
@@ -816,16 +811,14 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
       latestRecordAt,
     };
   }).filter(row => {
-    if (row.component.security_status !== selectedIssueStatus) return false;
-    const componentID = filters.component_id ? Number(filters.component_id) : undefined;
-    if (componentID && row.component.id !== componentID) return false;
+    if (row.component.security_status !== 'affected' && row.component.security_status !== 'check_failed') return false;
     return true;
   }).sort((left, right) => {
     return (right.latestRecordAt || '').localeCompare(left.latestRecordAt || '');
   });
 
   const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
-  const componentOptions = components.map(item => ({ label: item.name, value: item.id }));
+  const componentNameFilter = typeof filters.component_name === 'string' ? filters.component_name : '';
 
   return (
     <section>
@@ -836,34 +829,37 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             <strong>筛选条件</strong>
             {activeCount > 0 && <span>{`已选择 ${activeCount} 项`}</span>}
           </div>
-          {activeCount > 0 && <Button size="small" onClick={() => { setFilters({}); void load({}, selectedIssueStatus); }}>清空</Button>}
+          {activeCount > 0 && (
+            <Button
+              size="small"
+              onClick={() => {
+                setFilters({});
+                void load({});
+              }}
+            >
+              清空
+            </Button>
+          )}
         </div>
         <Space className="filter-space" wrap>
-          <Tabs
-            activeKey={selectedIssueStatus}
-            onChange={key => {
-              const nextStatus = key as 'affected' | 'check_failed';
-              setSelectedIssueStatus(nextStatus);
-              void load(filters, nextStatus);
-            }}
-            items={[
-              { key: 'affected', label: '有漏洞' },
-              { key: 'check_failed', label: '检查失败' },
-            ]}
-          />
-          <Select
+          <Input.Search
             allowClear
-            showSearch
             className="filter-select"
-            placeholder="组件"
-            value={filters.component_id}
-            optionFilterProp="label"
-            onChange={value => {
-              const next = { ...filters, component_id: value };
+            placeholder="组件名称"
+            value={componentNameFilter}
+            onChange={event => {
+              const value = event.target.value;
+              const next = { ...filters, component_name: value || undefined };
               setFilters(next);
-              void load(next, selectedIssueStatus);
+              if (value === '') {
+                void load(next);
+              }
             }}
-            options={componentOptions}
+            onSearch={value => {
+              const next = { ...filters, component_name: value.trim() || undefined };
+              setFilters(next);
+              void load(next);
+            }}
           />
         </Space>
       </Card>
@@ -872,7 +868,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
           {loading ? (
             <Card className="mobile-empty">加载中...</Card>
           ) : rows.length === 0 ? (
-            <Card className="mobile-empty">{selectedIssueStatus === 'affected' ? '暂无有漏洞组件' : '暂无检查失败组件'}</Card>
+            <Card className="mobile-empty">暂无漏洞或检查失败组件</Card>
           ) : rows.map(row => (
             <Card key={row.component.id} className="mobile-item-card">
               <div className="mobile-item-head">
@@ -917,7 +913,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
               dataIndex: 'vulnerabilityIds',
               width: 260,
               render: (_, row) => (
-                selectedIssueStatus === 'affected' && row.vulnerabilityIds.length > 0 ? (
+                row.vulnerabilityIds.length > 0 ? (
                   <Space size={[4, 4]} wrap>
                     {row.vulnerabilityIds.slice(0, 3).map(identifier => <Tag key={identifier}>{identifier}</Tag>)}
                     {row.vulnerabilityIds.length > 3 && <Tag>+{row.vulnerabilityIds.length - 3}</Tag>}

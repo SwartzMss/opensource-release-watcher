@@ -58,6 +58,11 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 		clauses = append(clauses, "rs.component_id = ?")
 		args = append(args, opts.ComponentID)
 	}
+	if opts.Keyword != "" {
+		clauses = append(clauses, "(c.name LIKE ? OR c.repo_url LIKE ?)")
+		keyword := "%" + opts.Keyword + "%"
+		args = append(args, keyword, keyword)
+	}
 	if opts.SecurityStatus != "" {
 		clauses = append(clauses, "rs.risk_status = ?")
 		args = append(args, opts.SecurityStatus)
@@ -67,6 +72,7 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM component_security_records rs
+		JOIN components c ON c.id = rs.component_id
 		WHERE `+where+``, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
