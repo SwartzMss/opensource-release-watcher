@@ -37,6 +37,7 @@ type Service struct {
 	securityMu      sync.Mutex
 	securityQueued  map[int64]struct{}
 	securityRunning map[int64]struct{}
+	securityPending map[int64]securityJob
 	runtimeMu       sync.RWMutex
 	runtimeStatus   RuntimeStatus
 }
@@ -65,6 +66,7 @@ func New(store *storage.Store, checker *checker.Checker, securityChecker *securi
 		securityQueue:   make(chan securityJob, 128),
 		securityQueued:  make(map[int64]struct{}),
 		securityRunning: make(map[int64]struct{}),
+		securityPending: make(map[int64]securityJob),
 		runtimeStatus: RuntimeStatus{
 			GitHubTokenStatus: "待检测",
 			ProxyStatus:       "待检测",
@@ -486,22 +488,22 @@ func (s *Service) enqueueSecuritySync(component storage.Component, runID int64, 
 	job := securityJob{component: component, runID: runID, checkRecord: checkRecord, forceResolve: forceResolve, trigger: trigger}
 	s.securityMu.Lock()
 	if _, running := s.securityRunning[component.ID]; running {
+		replaced, hadPending := s.securityPending[component.ID]
+		s.securityPending[component.ID] = job
 		s.securityMu.Unlock()
-		log.Printf("security sync skipped component_id=%d trigger=%s already running", component.ID, trigger)
-		if runID > 0 {
-			if err := s.notifyCheckRunSummary(context.Background(), component, checkRecord, storage.ComponentSecurityProfile{}, nil, runID, "skipped", "security sync already running"); err != nil {
-				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", component.ID, runID, err)
-			}
+		log.Printf("security sync deferred component_id=%d trigger=%s already running", component.ID, trigger)
+		if hadPending && replaced.runID > 0 && replaced.runID != runID {
+			s.finishComponentCheckRunSuperseded(context.Background(), replaced.runID, replaced.checkRecord.Status, "newer security sync superseded pending job")
 		}
 		return
 	}
 	if _, queued := s.securityQueued[component.ID]; queued {
+		replaced, hadPending := s.securityPending[component.ID]
+		s.securityPending[component.ID] = job
 		s.securityMu.Unlock()
-		log.Printf("security sync skipped component_id=%d trigger=%s already queued", component.ID, trigger)
-		if runID > 0 {
-			if err := s.notifyCheckRunSummary(context.Background(), component, checkRecord, storage.ComponentSecurityProfile{}, nil, runID, "skipped", "security sync already queued"); err != nil {
-				log.Printf("check run summary notification failed component_id=%d run_id=%d err=%v", component.ID, runID, err)
-			}
+		log.Printf("security sync deferred component_id=%d trigger=%s already queued", component.ID, trigger)
+		if hadPending && replaced.runID > 0 && replaced.runID != runID {
+			s.finishComponentCheckRunSuperseded(context.Background(), replaced.runID, replaced.checkRecord.Status, "newer security sync superseded pending job")
 		}
 		return
 	}
@@ -540,9 +542,35 @@ func (s *Service) executeSecurityJob(job securityJob) {
 	defer func() {
 		s.securityMu.Lock()
 		delete(s.securityRunning, job.component.ID)
+		next, hasPending := s.securityPending[job.component.ID]
+		if hasPending {
+			delete(s.securityPending, job.component.ID)
+		}
 		s.securityMu.Unlock()
+		if hasPending {
+			log.Printf("security sync starting deferred job component_id=%d trigger=%s run_id=%d", next.component.ID, next.trigger, next.runID)
+			go s.executeSecurityJob(next)
+		}
 	}()
 	s.runSecuritySync(job)
+}
+
+func (s *Service) finishComponentCheckRunSuperseded(ctx context.Context, runID int64, versionStatus, reason string) {
+	if runID <= 0 {
+		return
+	}
+	if versionStatus == "" {
+		versionStatus = "success"
+	}
+	if err := s.store.FinishComponentCheckRun(ctx, &storage.ComponentCheckRun{
+		ID:             runID,
+		Status:         "partial_failed",
+		VersionStatus:  versionStatus,
+		SecurityStatus: "skipped",
+		ErrorMessage:   reason,
+	}); err != nil {
+		log.Printf("component check run supersede finish failed run_id=%d err=%v", runID, err)
+	}
 }
 
 func (s *Service) runSecuritySync(job securityJob) {
@@ -586,6 +614,22 @@ func (s *Service) runSecuritySync(job securityJob) {
 		report.Records[i].RunID = job.runID
 	}
 	log.Printf("component check run security finished run_id=%d component_id=%d status=%s records=%d suggested_version=%s", job.runID, job.component.ID, report.Profile.LastSecurityStatus, len(report.Records), report.Profile.SecuritySuggestedVersion)
+	current, err := s.store.GetComponent(ctx, job.component.ID)
+	if err != nil {
+		log.Printf("security current component load failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
+		if job.runID > 0 {
+			s.finishComponentCheckRunSuperseded(context.Background(), job.runID, job.checkRecord.Status, err.Error())
+		}
+		return
+	}
+	if current.CurrentVersion != job.component.CurrentVersion {
+		reason := fmt.Sprintf("security result stale: checked version %s, current version %s", job.component.CurrentVersion, current.CurrentVersion)
+		log.Printf("security stale result skipped component_id=%d trigger=%s %s", job.component.ID, job.trigger, reason)
+		if job.runID > 0 {
+			s.finishComponentCheckRunSuperseded(context.Background(), job.runID, job.checkRecord.Status, reason)
+		}
+		return
+	}
 	if err := s.store.SaveComponentSecurityState(ctx, report.Profile, report.Records); err != nil {
 		log.Printf("security state save failed component_id=%d trigger=%s err=%v", job.component.ID, job.trigger, err)
 		if job.runID > 0 {

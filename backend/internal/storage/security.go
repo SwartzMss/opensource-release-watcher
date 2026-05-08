@@ -11,7 +11,7 @@ func (s *Store) ListComponentSecurityRecords(ctx context.Context, componentID in
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rs.id, rs.run_id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
 		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
-		       rs.raw_payload, rs.evidence_url, rs.created_at
+		       '', rs.evidence_url, rs.created_at
 		FROM component_security_records rs
 		JOIN components c ON c.id = rs.component_id
 		WHERE rs.component_id = ?
@@ -75,7 +75,7 @@ func (s *Store) ListSecurityRecords(ctx context.Context, opts ListOptions) ([]Co
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rs.id, rs.run_id, rs.component_id, c.name AS component_name, rs.version, rs.commit_sha, rs.risk_type, rs.risk_status, rs.source, rs.identifier,
 		       rs.affected_range, rs.fixed_version, rs.severity, rs.confidence, rs.summary, rs.status_reason,
-		       rs.raw_payload, rs.evidence_url, rs.created_at
+		       '', rs.evidence_url, rs.created_at
 		FROM component_security_records rs
 		JOIN components c ON c.id = rs.component_id
 		WHERE `+where+`

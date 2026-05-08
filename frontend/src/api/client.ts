@@ -16,16 +16,29 @@ import type {
 } from '../types/domain';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    credentials: 'same-origin',
-    ...init,
-  });
-  const payload = (await response.json()) as ApiResponse<T>;
-  if (!response.ok || payload.code !== 0) {
-    throw new Error(payload.message || `request failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetch(path, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      credentials: 'same-origin',
+      signal: init?.signal ?? controller.signal,
+    }).finally(() => {
+      window.clearTimeout(timeout);
+    });
+    const payload = (await response.json()) as ApiResponse<T>;
+    if (!response.ok || payload.code !== 0) {
+      throw new Error(payload.message || `request failed: ${response.status}`);
+    }
+    return payload.data;
+  } catch (error) {
+    window.clearTimeout(timeout);
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('请求超时，请稍后刷新重试');
+    }
+    throw error;
   }
-  return payload.data;
 }
 
 export const api = {
