@@ -760,12 +760,12 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   async function load(nextFilters = filters) {
     setLoading(true);
     try {
-      const componentName = typeof nextFilters.component_name === 'string' ? nextFilters.component_name.trim() : '';
+      const componentID = nextFilters.component_id ? Number(nextFilters.component_id) : undefined;
       const [nextComponents, nextRecords] = await Promise.all([
-        api.components({ page_size: 100, keyword: componentName || undefined }),
+        api.components({ page_size: 100 }),
         api.securityRecords({
           page_size: 100,
-          keyword: componentName || undefined,
+          component_id: componentID,
         }),
       ]);
       setComponents(nextComponents.items);
@@ -818,7 +818,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   });
 
   const activeCount = Object.values(filters).filter(value => value !== undefined && value !== '').length;
-  const componentNameFilter = typeof filters.component_name === 'string' ? filters.component_name : '';
+  const componentOptions = components.map(item => ({ label: item.name, value: item.id }));
 
   return (
     <section>
@@ -841,25 +841,20 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             </Button>
           )}
         </div>
-        <Space className="filter-space" wrap>
-          <Input.Search
+        <Space className="filter-space compact-filter-space" wrap>
+          <Select
             allowClear
+            showSearch
             className="filter-select"
-            placeholder="组件名称"
-            value={componentNameFilter}
-            onChange={event => {
-              const value = event.target.value;
-              const next = { ...filters, component_name: value || undefined };
-              setFilters(next);
-              if (value === '') {
-                void load(next);
-              }
-            }}
-            onSearch={value => {
-              const next = { ...filters, component_name: value.trim() || undefined };
+            placeholder="组件"
+            value={filters.component_id}
+            optionFilterProp="label"
+            onChange={value => {
+              const next = { ...filters, component_id: value };
               setFilters(next);
               void load(next);
             }}
+            options={componentOptions}
           />
         </Space>
       </Card>

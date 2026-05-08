@@ -748,6 +748,14 @@ a {
   flex: 1 1 180px;
 }
 
+.compact-filter-space .ant-space-item {
+  flex: 0 0 240px;
+}
+
+.compact-filter-space .filter-select {
+  width: 100%;
+}
+
 .component-select {
   min-width: 360px;
 }
@@ -1017,6 +1025,10 @@ a {
 
   .toolbar-card .ant-space-item {
     width: 100%;
+  }
+
+  .compact-filter-space .ant-space-item {
+    flex: 1 1 100%;
   }
 
   .filter-bar-head {
