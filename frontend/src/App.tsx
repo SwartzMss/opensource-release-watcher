@@ -758,15 +758,23 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
   const [detail, setDetail] = useState<{ component: ComponentItem; records: ComponentSecurityRecord[]; selectedRecordId?: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function load() {
+  async function load(
+    nextFilters = filters,
+    nextStatus: 'affected' | 'check_failed' = selectedIssueStatus,
+  ) {
     setLoading(true);
     try {
+      const componentID = nextFilters.component_id ? Number(nextFilters.component_id) : undefined;
       const [nextComponents, nextRecords] = await Promise.all([
         api.components({ page_size: 100 }),
-        loadAllSecurityRecords(),
+        api.securityRecords({
+          page_size: 100,
+          risk_status: nextStatus,
+          component_id: componentID,
+        }),
       ]);
       setComponents(nextComponents.items);
-      setRecords(nextRecords);
+      setRecords(nextRecords.items);
     } catch (error) {
       message.error(formatErrorMessage(error));
     } finally {
@@ -828,9 +836,21 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             <strong>筛选条件</strong>
             {activeCount > 0 && <span>{`已选择 ${activeCount} 项`}</span>}
           </div>
-          {activeCount > 0 && <Button size="small" onClick={() => setFilters({})}>清空</Button>}
+          {activeCount > 0 && <Button size="small" onClick={() => { setFilters({}); void load({}, selectedIssueStatus); }}>清空</Button>}
         </div>
         <Space className="filter-space" wrap>
+          <Tabs
+            activeKey={selectedIssueStatus}
+            onChange={key => {
+              const nextStatus = key as 'affected' | 'check_failed';
+              setSelectedIssueStatus(nextStatus);
+              void load(filters, nextStatus);
+            }}
+            items={[
+              { key: 'affected', label: '有漏洞' },
+              { key: 'check_failed', label: '检查失败' },
+            ]}
+          />
           <Select
             allowClear
             showSearch
@@ -841,6 +861,7 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
             onChange={value => {
               const next = { ...filters, component_id: value };
               setFilters(next);
+              void load(next, selectedIssueStatus);
             }}
             options={componentOptions}
           />
@@ -989,19 +1010,6 @@ function SecurityRecords({ isMobile }: { isMobile: boolean }) {
       </Drawer>
     </section>
   );
-}
-
-async function loadAllSecurityRecords(): Promise<ComponentSecurityRecord[]> {
-  const items: ComponentSecurityRecord[] = [];
-  let page = 1;
-  let total = 0;
-  do {
-    const response = await api.securityRecords({ page, page_size: 100 });
-    items.push(...response.items);
-    total = response.total;
-    page += 1;
-  } while (items.length < total);
-  return items;
 }
 
 function Subscribers({ isMobile }: { isMobile: boolean }) {
