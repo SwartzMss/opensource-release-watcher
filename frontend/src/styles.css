@@ -1446,7 +1446,7 @@ a {
 }
 
 .nav {
-  gap: 10px;
+  gap: 12px;
 }
 
 .nav button {
@@ -1454,16 +1454,16 @@ a {
   border-radius: 11px;
   color: #405171;
   display: flex;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
-  gap: 13px;
-  min-height: 44px;
-  padding: 0 16px;
+  gap: 15px;
+  min-height: 50px;
+  padding: 0 18px;
 }
 
 .nav button .app-icon {
-  height: 18px;
-  width: 18px;
+  height: 21px;
+  width: 21px;
 }
 
 .nav button .app-icon {
