@@ -48,6 +48,38 @@ function formatErrorMessage(error: unknown) {
   return String(error);
 }
 
+function BrandMark({ large = false }: { large?: boolean }) {
+  return (
+    <span className={`brand-mark${large ? ' brand-mark-large' : ''}`} aria-hidden="true">
+      <span className="brand-mark-cube" />
+    </span>
+  );
+}
+
+function AppIcon({ name }: { name: string }) {
+  const icons: Record<string, ReactNode> = {
+    home: <path d="M4 11.2 12 5l8 6.2V20h-5v-5H9v5H4z" />,
+    grid: <path d="M5 5h5v5H5zm9 0h5v5h-5zM5 14h5v5H5zm9 0h5v5h-5z" />,
+    shield: <path d="M12 3 19 6v5.2c0 4-2.7 7.6-7 9.8-4.3-2.2-7-5.8-7-9.8V6z" />,
+    link: <path d="M8.6 12.8 7.2 14.2a3 3 0 0 1-4.2-4.2l2.8-2.8A3 3 0 0 1 10 7.1m5.4 4.1 1.4-1.4a3 3 0 0 1 4.2 4.2l-2.8 2.8a3 3 0 0 1-4.2.1M8 16 16 8" />,
+    calendar: <path d="M6 4v3m12-3v3M4 9h16M6 6h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />,
+    file: <path d="M7 3h7l4 4v14H7zM14 3v5h5M9 13h6M9 17h6" />,
+    logout: <path d="M10 5H5v14h5m4-4 3-3-3-3m3 3H9" />,
+    user: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 9a7 7 0 0 1 14 0" />,
+    lock: <path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6zM12 14v3" />,
+    cube: <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zm0 0v9m8-4.5-8 4.5m-8-4.5 8 4.5" />,
+    arrowUp: <path d="M12 20V5m-6 6 6-6 6 6" />,
+    alert: <path d="M12 4 3 20h18zM12 9v5m0 3h.01" />,
+    bell: <path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4zM10 19a2 2 0 0 0 4 0" />,
+  };
+
+  return (
+    <svg className="app-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {icons[name] ?? icons.grid}
+    </svg>
+  );
+}
+
 export function App() {
   const [user, setUser] = useState<AuthUser | null>();
   const [page, setPage] = useState<PageKey>('dashboard');
@@ -161,13 +193,13 @@ export function App() {
     return <Login onLogin={setUser} />;
   }
 
-  const navItems: Array<[PageKey, string]> = [
-    ['dashboard', '仪表盘'],
-    ['components', '组件管理'],
-    ['security', '漏洞检查'],
-    ['subscribers', '订阅人管理'],
-    ['checks', '检查记录'],
-    ['notifications', '通知记录'],
+  const navItems: Array<[PageKey, string, string]> = [
+    ['dashboard', '仪表盘', 'home'],
+    ['components', '组件管理', 'grid'],
+    ['security', '漏洞管理', 'shield'],
+    ['subscribers', '订阅管理', 'link'],
+    ['checks', '检查记录', 'calendar'],
+    ['notifications', '通知记录', 'file'],
   ];
 
   const pageContent = (
@@ -199,7 +231,7 @@ export function App() {
       <div className="shell mobile-shell">
         <header className="mobile-topbar">
           <button type="button" className="brand mobile-brand brand-button" onClick={openDashboard}>
-            <span className="brand-mark">OR</span>
+            <BrandMark />
             <div>
               <strong>Release Watcher</strong>
               <small>开源组件版本感知</small>
@@ -221,7 +253,7 @@ export function App() {
             <Button className="logout-button" onClick={() => void logout()}>退出登录</Button>
           </div>
           <nav className="nav mobile-nav">
-            {navItems.map(([key, label]) => (
+            {navItems.map(([key, label, icon]) => (
               <button
                 key={key}
                 className={page === key ? 'active' : ''}
@@ -230,6 +262,7 @@ export function App() {
                   setMobileNavOpen(false);
                 }}
               >
+                <AppIcon name={icon} />
                 {label}
               </button>
             ))}
@@ -248,22 +281,25 @@ export function App() {
           <div className="sidebar-shell">
           <div>
             <button type="button" className="brand brand-button" onClick={openDashboard}>
-              <span className="brand-mark">OR</span>
+              <BrandMark />
               <div>
                 <strong>Release Watcher</strong>
-                <small>开源组件版本感知</small>
               </div>
             </button>
             <nav className="nav">
-              {navItems.map(([key, label]) => (
+              {navItems.map(([key, label, icon]) => (
                 <button key={key} className={page === key ? 'active' : ''} onClick={() => setPage(key as PageKey)}>
+                  <AppIcon name={icon} />
                   {label}
                 </button>
               ))}
             </nav>
           </div>
           <div className="session">
-            <Button className="logout-button" onClick={() => void logout()}>退出登录</Button>
+            <Button className="logout-button sidebar-logout-button" onClick={() => void logout()}>
+              <AppIcon name="logout" />
+              退出登录
+            </Button>
           </div>
         </div>
       </Layout.Sider>
@@ -292,21 +328,26 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
 
   return (
     <main className="login-shell">
+      <div className="login-orbit login-orbit-top" />
+      <div className="login-orbit login-orbit-bottom" />
+      <div className="login-cube-scene" aria-hidden="true">
+        <div className="login-cube" />
+        <span />
+        <span />
+      </div>
       <section className="login-panel">
         <div className="login-brand">
-          <span className="brand-mark">OR</span>
-          <div>
-            <h1>Release Watcher</h1>
-            <p>开源组件版本感知</p>
-          </div>
+          <BrandMark large />
+          <h1>Release Watcher</h1>
+          <p>开源组件版本感知</p>
         </div>
         {error && <Alert className="login-alert" type="error" message={error} showIcon />}
         <Form layout="vertical" initialValues={{ username: 'admin' }} onFinish={submit}>
           <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
-            <Input autoComplete="username" />
+            <Input autoComplete="username" placeholder="请输入用户名" prefix={<AppIcon name="user" />} />
           </Form.Item>
           <Form.Item name="password" label="密码" rules={[{ required: true }]}>
-            <Input.Password autoComplete="current-password" />
+            <Input.Password autoComplete="current-password" placeholder="请输入密码" prefix={<AppIcon name="lock" />} />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={loading} block>
             登录
@@ -390,16 +431,16 @@ function Dashboard({
     updatesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   const metricCards = [
-    { label: '组件管理', value: summary?.component_total ?? 0, tone: 'neutral' as const, onClick: onOpenComponents },
-    { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'warning' as const, onClick: openUpdatesSection },
-    { label: '漏洞检查', value: vulnerableComponentTotal, tone: 'danger' as const, onClick: onOpenSecurity },
-    { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenChecks },
-    { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'danger' as const, onClick: onOpenNotifications },
+    { label: '组件管理', value: summary?.component_total ?? 0, tone: 'neutral' as const, icon: 'cube', onClick: onOpenComponents },
+    { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'success' as const, icon: 'arrowUp', onClick: openUpdatesSection },
+    { label: '漏洞修复', value: vulnerableComponentTotal, tone: 'warning' as const, icon: 'shield', onClick: onOpenSecurity },
+    { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const, icon: 'alert', onClick: onOpenChecks },
+    { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'purple' as const, icon: 'bell', onClick: onOpenNotifications },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string; tone?: 'emphasis' }> = [
     {
-      label: '代理设置',
+      label: '代码质量',
       value: runtimeStatus?.proxy_status ?? '待检测',
       extra: statusExtra(runtimeStatus?.proxy_message),
     },
@@ -486,7 +527,7 @@ function Dashboard({
     <section className="dashboard-page">
       <PageHeader
         title="仪表盘"
-        description="查看开源组件监控整体状态。"
+        description="查看并跟踪平台数据概览。"
       />
       <div className="metric-grid dashboard-metric-grid">
         {metricCards.map(card => (
@@ -496,7 +537,10 @@ function Dashboard({
             loading={dashboardLoading}
             onClick={card.onClick}
           >
-            <small>{card.label}</small>
+            <div className="metric-head">
+              <span className="metric-icon"><AppIcon name={card.icon} /></span>
+              <small>{card.label}</small>
+            </div>
             <strong>{card.value}</strong>
           </Card>
         ))}
