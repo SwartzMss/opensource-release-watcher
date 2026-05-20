@@ -21,6 +21,7 @@ type Config struct {
 	DBPath        string
 	GitHubToken   string
 	CheckInterval time.Duration
+	StaticDir     string
 	Auth          AuthConfig
 	GraphMail     GraphMailConfig
 }
@@ -45,6 +46,7 @@ func Load() Config {
 		DBPath:        dbPath,
 		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
 		CheckInterval: durationEnv("CHECK_INTERVAL", 6*time.Hour),
+		StaticDir:     os.Getenv("STATIC_DIR"),
 		Auth: AuthConfig{
 			Username:    adminUsername,
 			Password:    adminPassword,

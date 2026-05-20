@@ -56,8 +56,12 @@ func main() {
 	scheduler.New(watcherService, cfg.CheckInterval).Start(context.Background())
 
 	router := api.NewRouter(watcherService, cfg.Auth)
+	handler := api.WithStaticFiles(router, cfg.StaticDir)
+	if cfg.StaticDir != "" {
+		log.Printf("serving frontend static files from %s", cfg.StaticDir)
+	}
 	log.Printf("opensource-release-watcher listening on %s", cfg.ServerAddr)
-	if err := http.ListenAndServe(cfg.ServerAddr, router); err != nil {
+	if err := http.ListenAndServe(cfg.ServerAddr, handler); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
 }

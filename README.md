@@ -43,6 +43,7 @@ cp .env.example .env
 | `SERVER_ADDR` | 后端监听地址，例如 `127.0.0.1:8000` |
 | `DB_PATH` | SQLite 数据库路径 |
 | `CHECK_INTERVAL` | 组件定时检查间隔，例如 `6h` |
+| `STATIC_DIR` | 前端静态资源目录，standalone 部署时通常为 `./frontend/dist` |
 | `GITHUB_TOKEN` | GitHub API Token，建议配置以提高 API 限额 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 可选代理配置 |
 | `NO_PROXY` | 不走代理的地址，例如 `localhost,127.0.0.1` |
@@ -50,6 +51,7 @@ cp .env.example .env
 | `ADMIN_PASSWORD` | 登录密码 |
 | `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境必须修改 |
 | `GRAPH_*` | Microsoft Graph 邮件发送配置 |
+| `DEPLOY_MODE` | 部署模式，默认 `standalone`，只运行 Go 服务 |
 
 `.env` 包含真实密钥和本机路径，不应提交到仓库。
 
@@ -79,9 +81,21 @@ scripts/build.sh
 
 ### 4. 生产部署
 
+默认部署方式是不使用 nginx，让 Go 后端直接提供 API 和前端静态资源。在 `.env` 中使用：
+
+```env
+DEPLOY_MODE=standalone
+SERVER_ADDR=0.0.0.0:8000
+STATIC_DIR=./frontend/dist
+```
+
+然后执行：
+
 ```bash
 sudo scripts/deploy.sh start
 ```
+
+访问地址为 `http://服务器IP:8000/`。
 
 常用命令：
 

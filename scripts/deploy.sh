@@ -61,6 +61,17 @@ run_as_original_user() {
 
 load_env_file
 require_cmd bash
+DEPLOY_MODE="${DEPLOY_MODE:-standalone}"
+DEPLOY_MODE="${DEPLOY_MODE,,}"
+
+case "$DEPLOY_MODE" in
+  nginx|standalone)
+    ;;
+  *)
+    echo "DEPLOY_MODE must be nginx or standalone." >&2
+    exit 1
+    ;;
+esac
 
 usage() {
   echo "Usage: $0 [dev|install|start|stop|restart|status|build|clean-static|uninstall]" >&2
@@ -77,8 +88,10 @@ case "$ACTION" in
   install|start|restart)
     ensure_root
     setup_user_toolchain
-    require_cmd nginx
-    require_cmd rsync
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      require_cmd nginx
+      require_cmd rsync
+    fi
     ;;
   stop|status|clean-static|uninstall)
     ensure_root
@@ -94,6 +107,10 @@ NGINX_SERVICE="${NGINX_SERVICE:-nginx}"
 CLIENT_MAX_BODY_SIZE="${CLIENT_MAX_BODY_SIZE:-200M}"
 SERVER_ADDR="${SERVER_ADDR:-127.0.0.1:8000}"
 DB_PATH="${DB_PATH:-$ROOT/data/watcher.db}"
+STATIC_DIR="${STATIC_DIR:-}"
+if [[ "$DEPLOY_MODE" == "standalone" && -z "$STATIC_DIR" ]]; then
+  STATIC_DIR="$FRONTEND_BUILD"
+fi
 
 build() {
   setup_user_toolchain
@@ -174,19 +191,47 @@ prepare_runtime_dirs() {
 }
 
 read_nginx_vars() {
+  DEPLOY_SCHEME="${DEPLOY_SCHEME:-${DEPLOY_PROTOCOL:-http}}"
+  DEPLOY_SCHEME="${DEPLOY_SCHEME,,}"
   DOMAIN="${DOMAIN:-${DEPLOY_DOMAIN:-}}"
-  EXTERNAL_PORT="${EXTERNAL_PORT:-${DEPLOY_EXTERNAL_PORT:-443}}"
+  EXTERNAL_PORT="${EXTERNAL_PORT:-${DEPLOY_EXTERNAL_PORT:-}}"
   CERT_PATH="${CERT_PATH:-${DEPLOY_CERT_PATH:-}}"
   KEY_PATH="${KEY_PATH:-${DEPLOY_KEY_PATH:-}}"
   BACKEND_BIND="${BACKEND_BIND:-${SERVER_ADDR}}"
 
+  case "$DEPLOY_SCHEME" in
+    http|https)
+      ;;
+    *)
+      echo "DEPLOY_SCHEME must be http or https." >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ -z "${EXTERNAL_PORT:-}" ]]; then
+    if [[ "$DEPLOY_SCHEME" == "http" ]]; then
+      EXTERNAL_PORT=80
+    else
+      EXTERNAL_PORT=443
+    fi
+  fi
+
+  if [[ "$DEPLOY_SCHEME" == "http" ]]; then
+    DOMAIN="${DOMAIN:-_}"
+    return
+  fi
+
   if [[ -z "${DOMAIN:-}" || -z "${CERT_PATH:-}" || -z "${KEY_PATH:-}" ]]; then
     cat >&2 <<EOF
-nginx requires DOMAIN, CERT_PATH, KEY_PATH.
+nginx HTTPS deployment requires DOMAIN, CERT_PATH, KEY_PATH.
 Provide them via environment variables or $ENV_FILE, e.g.:
   DOMAIN=watcher.example.com
   CERT_PATH=/etc/letsencrypt/live/watcher/fullchain.pem
   KEY_PATH=/etc/letsencrypt/live/watcher/privkey.pem
+
+For HTTP-only deployment without certificates, set:
+  DEPLOY_SCHEME=http
+  EXTERNAL_PORT=80
 EOF
     exit 1
   fi
@@ -197,7 +242,37 @@ configure_nginx() {
   sync_static_assets
 
   local nginx_conf="/etc/nginx/sites-available/${SERVICE_NAME}.conf"
-  cat >"$nginx_conf" <<EOF
+  if [[ "$DEPLOY_SCHEME" == "http" ]]; then
+    cat >"$nginx_conf" <<EOF
+server {
+    listen $EXTERNAL_PORT;
+    server_name $DOMAIN;
+    client_max_body_size $CLIENT_MAX_BODY_SIZE;
+
+    root $STATIC_DEST;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://$BACKEND_BIND;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+    }
+
+    location /healthz {
+        proxy_pass http://$BACKEND_BIND;
+        proxy_set_header Host \$host;
+    }
+
+    location / {
+        try_files \$uri /index.html;
+    }
+}
+EOF
+  else
+    cat >"$nginx_conf" <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
@@ -234,6 +309,7 @@ server {
     }
 }
 EOF
+  fi
 
   ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 }
@@ -259,6 +335,11 @@ write_unit_files() {
     exit 1
   fi
 
+  local static_dir_line=""
+  if [[ -n "$STATIC_DIR" ]]; then
+    static_dir_line="Environment=\"STATIC_DIR=$STATIC_DIR\""
+  fi
+
   tee "$BACKEND_UNIT_PATH" >/dev/null <<EOF
 [Unit]
 Description=opensource-release-watcher backend
@@ -268,6 +349,7 @@ Wants=network-online.target
 [Service]
 Environment="SERVER_ADDR=$SERVER_ADDR"
 Environment="DB_PATH=$DB_PATH"
+$static_dir_line
 EnvironmentFile=-$ENV_FILE
 WorkingDirectory=$ROOT
 ExecStart=$BIN_PATH
@@ -343,11 +425,15 @@ case "$ACTION" in
     stop_services
     build
     write_unit_files
-    configure_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      configure_nginx
+    fi
     configure_logrotate
     prepare_runtime_dirs
     start_services
-    reload_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      reload_nginx
+    fi
     ;;
   build)
     build
@@ -355,25 +441,35 @@ case "$ACTION" in
   start)
     build
     write_unit_files
-    configure_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      configure_nginx
+    fi
     configure_logrotate
     prepare_runtime_dirs
     start_services
-    reload_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      reload_nginx
+    fi
     ;;
   stop)
     stop_services
-    remove_nginx_config
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      remove_nginx_config
+    fi
     ;;
   restart)
     stop_services
     build
     write_unit_files
-    configure_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      configure_nginx
+    fi
     configure_logrotate
     prepare_runtime_dirs
     start_services
-    reload_nginx
+    if [[ "$DEPLOY_MODE" == "nginx" ]]; then
+      reload_nginx
+    fi
     ;;
   status)
     status_services
