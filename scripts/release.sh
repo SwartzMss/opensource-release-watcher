@@ -108,7 +108,7 @@ package_target() {
   copy_common_files "$package_dir"
   (
     cd "$SERVER_DIR"
-    GOOS="$goos" GOARCH="$goarch" GOCACHE="$GOCACHE" go build -o "$package_dir/bin/$binary_name" ./cmd/server
+    CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOCACHE="$GOCACHE" go build -o "$package_dir/bin/$binary_name" ./cmd/server
   )
 
   echo "==> Packaging ${package_name}.${archive_ext}"

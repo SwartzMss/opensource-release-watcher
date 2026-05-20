@@ -121,7 +121,15 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-然后上传 `release/` 目录下的压缩包和 `SHA256SUMS`。
+仓库提供了 GitHub Actions workflow：`.github/workflows/release.yml`。推送 `v*` tag 后会自动：
+
+1. 构建前端静态资源。
+2. 运行 Go 测试。
+3. 构建 Linux amd64、Linux arm64、Windows amd64 release 包。
+4. 生成 `SHA256SUMS`。
+5. 创建或更新对应 GitHub Release，并上传压缩包。
+
+也可以在 GitHub Actions 页面手动运行 `Release` workflow，输入版本号，例如 `v0.1.0`。
 
 ### 5. 生产部署
 
