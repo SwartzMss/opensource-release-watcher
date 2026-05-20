@@ -114,6 +114,14 @@ fi
 
 build() {
   setup_user_toolchain
+  if [[ "${DEPLOY_SKIP_BUILD:-}" == "1" ]]; then
+    echo "==> Skipping build because DEPLOY_SKIP_BUILD=1"
+    return
+  fi
+  if [[ (! -d "$ROOT/backend" || ! -d "$ROOT/frontend") && -x "$BIN_PATH" ]]; then
+    echo "==> Skipping build because source directories are unavailable and $BIN_PATH exists"
+    return
+  fi
   require_cmd go
   require_cmd npm
   run_as_original_user bash "$ROOT/scripts/build.sh"

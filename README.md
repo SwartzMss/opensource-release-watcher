@@ -79,7 +79,51 @@ scripts/build.sh
 - 后端二进制：`bin/opensource-release-watcher-server`
 - 前端静态资源：`frontend/dist`
 
-### 4. 生产部署
+### 4. 发布打包
+
+生成 Linux 和 Windows release 包：
+
+```bash
+scripts/release.sh v0.1.0
+```
+
+如果不传版本号，脚本会优先使用当前 Git tag / commit：
+
+```bash
+scripts/release.sh
+```
+
+默认产物输出到 `release/`：
+
+```text
+opensource-release-watcher-0.1.0-linux-amd64.tar.gz
+opensource-release-watcher-0.1.0-linux-arm64.tar.gz
+opensource-release-watcher-0.1.0-windows-amd64.zip
+SHA256SUMS
+```
+
+每个包内包含：
+
+```text
+bin/opensource-release-watcher-server      # Linux 包
+bin/opensource-release-watcher-server.exe  # Windows 包
+frontend/dist/
+.env.example
+README.md
+LICENSE
+scripts/deploy.sh
+```
+
+发布到 GitHub Release 时，建议先打 tag：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+然后上传 `release/` 目录下的压缩包和 `SHA256SUMS`。
+
+### 5. 生产部署
 
 默认部署方式是不使用 nginx，让 Go 后端直接提供 API 和前端静态资源。在 `.env` 中使用：
 
@@ -96,6 +140,15 @@ sudo scripts/deploy.sh start
 ```
 
 访问地址为 `http://服务器IP:8000/`。
+
+Windows release 包可以直接运行：
+
+```powershell
+Copy-Item .env.example .env
+.\bin\opensource-release-watcher-server.exe
+```
+
+然后访问 `http://127.0.0.1:8000/`。如果要让局域网访问，将 `.env` 中的 `SERVER_ADDR` 设置为 `0.0.0.0:8000`。
 
 常用命令：
 
