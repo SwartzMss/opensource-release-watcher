@@ -410,7 +410,7 @@ a {
 
 .page-header h1 {
   font-size: 34px;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -541,7 +541,7 @@ a {
 .dashboard-header-meta strong {
   font-size: 18px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .dashboard-panel {
@@ -1391,7 +1391,7 @@ a {
 .brand strong {
   font-size: 19px;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .brand-mark {
@@ -1515,7 +1515,7 @@ a {
   color: var(--text-strong);
   font-size: 34px;
   font-weight: 900;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .page-header p {
@@ -1581,7 +1581,7 @@ a {
 .metric strong {
   font-size: 46px;
   font-weight: 900;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   margin-top: 0;
 }
 
@@ -1628,7 +1628,7 @@ a {
   color: var(--text-strong);
   font-size: 24px;
   font-weight: 900;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .dashboard-health-grid {
@@ -1791,7 +1791,7 @@ a {
   color: var(--text-strong);
   font-size: 31px;
   font-weight: 900;
-  letter-spacing: -0.06em;
+  letter-spacing: 0;
   line-height: 1;
   margin: 6px 0 0;
 }
@@ -1933,5 +1933,224 @@ a {
 
   .metric strong {
     font-size: 42px;
+  }
+}
+
+/* Management UI density pass: keep the visual identity, reduce decorative weight. */
+body {
+  background: #f6f8fb;
+}
+
+.shell {
+  background: #f6f8fb;
+}
+
+.side {
+  background: #ffffff !important;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 22px 16px 18px;
+}
+
+.brand {
+  margin-bottom: 22px;
+}
+
+.brand strong {
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.nav {
+  gap: 7px;
+}
+
+.nav button {
+  border-radius: 8px;
+  font-size: 14px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.nav button .app-icon {
+  height: 18px;
+  width: 18px;
+}
+
+.nav button.active,
+.nav button:hover {
+  background: var(--primary-soft);
+}
+
+.sidebar-logout-button.ant-btn {
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 14px;
+  min-height: 40px;
+}
+
+.content {
+  padding: 28px;
+}
+
+.page-header {
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.page-header p {
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.metric-grid {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ant-card,
+.ant-card.metric,
+.dashboard-panel.ant-card,
+.toolbar-card.ant-card,
+.mobile-item-card.ant-card,
+.mobile-empty.ant-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.dashboard-metric {
+  min-height: 104px;
+}
+
+.metric .ant-card-body {
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+.metric-head {
+  gap: 10px;
+}
+
+.metric-icon {
+  height: 36px;
+  width: 36px;
+}
+
+.metric-icon .app-icon {
+  height: 23px;
+  width: 23px;
+}
+
+.metric small {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.metric strong {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.dashboard-panel {
+  margin-bottom: 16px;
+}
+
+.dashboard-panel .ant-card-head {
+  min-height: 52px;
+  padding: 0 18px !important;
+}
+
+.dashboard-panel .ant-card-body {
+  padding: 0 18px 18px;
+}
+
+.dashboard-panel-title span {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.dashboard-health-grid {
+  gap: 12px;
+}
+
+.dashboard-health-tile {
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.dashboard-health-tile-head strong {
+  font-size: 14px;
+}
+
+.dashboard-trend-row,
+.dashboard-alert-row,
+.dashboard-empty,
+.mobile-item-note {
+  border-radius: 8px;
+}
+
+.ant-table-thead > tr > th {
+  font-size: 13px;
+}
+
+.ant-table-tbody > tr > td {
+  font-size: 13px;
+}
+
+.login-panel {
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.login-brand h1,
+.metric strong,
+.dashboard-panel-title span {
+  letter-spacing: 0;
+}
+
+@media (max-width: 900px) {
+  .content {
+    padding: 20px 16px;
+  }
+
+  .dashboard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mobile-menu-button.ant-btn {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .content {
+    padding: 14px 10px 20px;
+  }
+
+  .page-header h1 {
+    font-size: 22px;
+  }
+
+  .dashboard-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric strong {
+    font-size: 30px;
   }
 }

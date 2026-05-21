@@ -71,6 +71,7 @@ function AppIcon({ name }: { name: string }) {
     arrowUp: <path d="M12 20V5m-6 6 6-6 6 6" />,
     alert: <path d="M12 4 3 20h18zM12 9v5m0 3h.01" />,
     bell: <path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4zM10 19a2 2 0 0 0 4 0" />,
+    menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   };
 
   return (
@@ -238,7 +239,9 @@ export function App() {
             </div>
           </button>
           <div className="mobile-topbar-actions">
-            <Button className="mobile-menu-button" onClick={() => setMobileNavOpen(true)}>☰</Button>
+            <Button className="mobile-menu-button" aria-label="打开导航" onClick={() => setMobileNavOpen(true)}>
+              <AppIcon name="menu" />
+            </Button>
             <Button className="logout-button mobile-logout-button" onClick={() => void logout()}>退出</Button>
           </div>
         </header>
@@ -433,14 +436,14 @@ function Dashboard({
   const metricCards = [
     { label: '组件管理', value: summary?.component_total ?? 0, tone: 'neutral' as const, icon: 'cube', onClick: onOpenComponents },
     { label: '组件更新', value: summary?.components_with_update ?? 0, tone: 'success' as const, icon: 'arrowUp', onClick: openUpdatesSection },
-    { label: '漏洞修复', value: vulnerableComponentTotal, tone: 'warning' as const, icon: 'shield', onClick: onOpenSecurity },
+    { label: '漏洞风险', value: vulnerableComponentTotal, tone: 'warning' as const, icon: 'shield', onClick: onOpenSecurity },
     { label: '检查异常', value: summary?.last_check_failed_total ?? 0, tone: 'danger' as const, icon: 'alert', onClick: onOpenChecks },
     { label: '通知异常', value: summary?.notification_failed_total ?? 0, tone: 'purple' as const, icon: 'bell', onClick: onOpenNotifications },
   ];
 
   const healthRows: Array<{ label: string; value: string; extra?: string; tone?: 'emphasis' }> = [
     {
-      label: '代码质量',
+      label: '代理状态',
       value: runtimeStatus?.proxy_status ?? '待检测',
       extra: statusExtra(runtimeStatus?.proxy_message),
     },
