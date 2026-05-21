@@ -46,7 +46,7 @@ func Load() Config {
 		DBPath:        dbPath,
 		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
 		CheckInterval: durationEnv("CHECK_INTERVAL", 6*time.Hour),
-		StaticDir:     os.Getenv("STATIC_DIR"),
+		StaticDir:     resolveStaticDir(os.Getenv("STATIC_DIR")),
 		Auth: AuthConfig{
 			Username:    adminUsername,
 			Password:    adminPassword,
@@ -61,6 +61,45 @@ func Load() Config {
 			RefreshToken: os.Getenv("GRAPH_REFRESH_TOKEN"),
 		},
 	}
+}
+
+func resolveStaticDir(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	candidates := make([]string, 0, 4)
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, value))
+		if strings.EqualFold(filepath.Base(cwd), "bin") {
+			candidates = append(candidates, filepath.Join(filepath.Dir(cwd), value))
+		}
+	}
+	if executable, err := os.Executable(); err == nil {
+		executableDir := filepath.Dir(executable)
+		candidates = append(candidates, filepath.Join(executableDir, value))
+		if strings.EqualFold(filepath.Base(executableDir), "bin") {
+			candidates = append(candidates, filepath.Join(filepath.Dir(executableDir), value))
+		}
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			if abs, err := filepath.Abs(candidate); err == nil {
+				return abs
+			}
+			return filepath.Clean(candidate)
+		}
+	}
+	if len(candidates) > 0 {
+		if abs, err := filepath.Abs(candidates[0]); err == nil {
+			return abs
+		}
+		return filepath.Clean(candidates[0])
+	}
+	return value
 }
 
 func loadDotEnvFiles() {
