@@ -3,11 +3,16 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
+	"net/smtp"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -33,6 +38,151 @@ type AuthStatus struct {
 
 type StatusProvider interface {
 	Status(ctx context.Context) (AuthStatus, error)
+}
+
+type SMTPMail struct {
+	cfg config.SMTPMailConfig
+}
+
+func NewSMTPMail(cfg config.SMTPMailConfig) *SMTPMail {
+	return &SMTPMail{cfg: cfg}
+}
+
+func (s *SMTPMail) Status(ctx context.Context) (AuthStatus, error) {
+	_ = ctx
+	status := AuthStatus{
+		Configured: s.configured(),
+		Connected:  s.configured(),
+	}
+	if s.cfg.Host == "" {
+		status.Message = "SMTP_HOST is required"
+		return status, nil
+	}
+	if s.cfg.From == "" {
+		status.Message = "SMTP_FROM is required"
+		return status, nil
+	}
+	if s.cfg.Password != "" && s.cfg.Username == "" {
+		status.Configured = false
+		status.Connected = false
+		status.Message = "SMTP_USERNAME is required when SMTP_PASSWORD is set"
+	}
+	return status, nil
+}
+
+func (s *SMTPMail) Send(message Message) error {
+	if !s.configured() {
+		return errors.New("SMTP_HOST and SMTP_FROM are required")
+	}
+	recipients := cleanRecipients(message.To)
+	if len(recipients) == 0 {
+		return nil
+	}
+
+	addr := net.JoinHostPort(s.cfg.Host, fmt.Sprintf("%d", s.port()))
+	dialer := net.Dialer{Timeout: 20 * time.Second}
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("smtp dial %s: %w", addr, err)
+	}
+	client, err := smtp.NewClient(conn, s.cfg.Host)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp create client: %w", err)
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return fmt.Errorf("smtp hello: %w", err)
+	}
+	if s.cfg.StartTLS {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.New("smtp server does not support STARTTLS")
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			return fmt.Errorf("smtp starttls: %w", err)
+		}
+	}
+	if s.cfg.Username != "" {
+		auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+	if err := client.Mail(strings.TrimSpace(s.cfg.From)); err != nil {
+		return fmt.Errorf("smtp mail from: %w", err)
+	}
+	for _, recipient := range recipients {
+		if err := client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("smtp rcpt to %s: %w", recipient, err)
+		}
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	if _, err := writer.Write(buildSMTPMessage(s.cfg.From, recipients, message)); err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("smtp write message: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("smtp finish message: %w", err)
+	}
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("smtp quit: %w", err)
+	}
+	return nil
+}
+
+func (s *SMTPMail) configured() bool {
+	return strings.TrimSpace(s.cfg.Host) != "" && strings.TrimSpace(s.cfg.From) != "" && (s.cfg.Password == "" || s.cfg.Username != "")
+}
+
+func (s *SMTPMail) port() int {
+	if s.cfg.Port > 0 {
+		return s.cfg.Port
+	}
+	return 25
+}
+
+func cleanRecipients(values []string) []string {
+	recipients := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			recipients = append(recipients, value)
+		}
+	}
+	return recipients
+}
+
+func buildSMTPMessage(from string, recipients []string, message Message) []byte {
+	var body strings.Builder
+	headers := textproto.MIMEHeader{}
+	headers.Set("From", sanitizeHeader(from))
+	headers.Set("To", sanitizeHeader(strings.Join(recipients, ", ")))
+	headers.Set("Subject", mime.QEncoding.Encode("utf-8", sanitizeHeader(message.Subject)))
+	headers.Set("MIME-Version", "1.0")
+	headers.Set("Content-Type", `text/plain; charset="utf-8"`)
+	headers.Set("Content-Transfer-Encoding", "8bit")
+	for key, values := range headers {
+		for _, value := range values {
+			body.WriteString(key)
+			body.WriteString(": ")
+			body.WriteString(value)
+			body.WriteString("\r\n")
+		}
+	}
+	body.WriteString("\r\n")
+	body.WriteString(message.Body)
+	body.WriteString("\r\n")
+	return []byte(body.String())
+}
+
+func sanitizeHeader(value string) string {
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	return strings.TrimSpace(value)
 }
 
 type GraphDelegatedMail struct {

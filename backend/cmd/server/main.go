@@ -40,7 +40,18 @@ func main() {
 	gitrepoResolver := gitrepo.New(githubClient)
 	osvClient := osv.NewClient()
 	securityChecker := security.New(gitrepoResolver, osvClient)
-	mailNotifier := notifier.NewGraphDelegatedMail(cfg.GraphMail)
+	var mailNotifier notifier.Notifier
+	switch cfg.MailProvider {
+	case "smtp", "exchange":
+		log.Printf("mail provider configured provider=%s host=%s port=%d starttls=%t", cfg.MailProvider, cfg.SMTPMail.Host, cfg.SMTPMail.Port, cfg.SMTPMail.StartTLS)
+		mailNotifier = notifier.NewSMTPMail(cfg.SMTPMail)
+	case "graph":
+		log.Printf("mail provider configured provider=graph")
+		mailNotifier = notifier.NewGraphDelegatedMail(cfg.GraphMail)
+	default:
+		log.Printf("mail provider %q is not supported; falling back to graph", cfg.MailProvider)
+		mailNotifier = notifier.NewGraphDelegatedMail(cfg.GraphMail)
+	}
 	releaseChecker := checker.New(githubClient)
 	watcherService := service.New(
 		store,

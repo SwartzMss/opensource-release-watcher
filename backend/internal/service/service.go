@@ -464,16 +464,21 @@ func (s *Service) SendTestNotification(ctx context.Context, recipient string) er
 	}
 	log.Printf("send test notification recipient=%s", recipient)
 	now := time.Now().Format(time.RFC3339)
-	return s.notifier.Send(notifier.Message{
+	if err := s.notifier.Send(notifier.Message{
 		To:      []string{recipient},
 		Subject: "[开源组件更新] 测试邮件",
 		Body: fmt.Sprintf(`这是一封来自 opensource-release-watcher 的测试邮件。
 
-如果你收到这封邮件，说明 Outlook / Microsoft Graph 发信配置可以正常工作。
+如果你收到这封邮件，说明当前邮件发信配置可以正常工作。
 
 发送时间：%s
 `, now),
-	})
+	}); err != nil {
+		log.Printf("send test notification failed recipient=%s err=%v", recipient, err)
+		return err
+	}
+	log.Printf("send test notification finished recipient=%s", recipient)
+	return nil
 }
 
 func (s *Service) enqueueSecuritySync(component storage.Component, runID int64, checkRecord storage.CheckRecord, forceResolve bool, trigger string) {

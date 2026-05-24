@@ -423,7 +423,7 @@ POST /api/notification-records/test
 }
 ```
 
-测试邮件只用于验证 Outlook / Microsoft Graph 发信配置，不写入通知记录。
+测试邮件只用于验证当前邮件发信配置，不写入通知记录。
 
 ### 6.4 查询邮件授权状态
 

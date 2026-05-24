@@ -14,7 +14,7 @@
 | `checker` | 版本检查，读取 Release / Tag 并比较版本 |
 | `security` | 当前版本漏洞检查和修复版本建议 |
 | `osv` | OSV API client |
-| `notifier` | 邮件发送，当前使用 Microsoft Graph |
+| `notifier` | 邮件发送，支持 Microsoft Graph 和 SMTP / Exchange relay |
 | `scheduler` | 周期性触发全量组件检查 |
 | `version` | 版本标准化和比较 |
 

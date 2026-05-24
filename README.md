@@ -50,7 +50,9 @@ cp .env.example .env
 | `ADMIN_USERNAME` | 登录用户名 |
 | `ADMIN_PASSWORD` | 登录密码 |
 | `SESSION_SECRET` | 登录 cookie 签名密钥，生产环境必须修改 |
+| `MAIL_PROVIDER` | 邮件发送方式，`graph` 或 `smtp` |
 | `GRAPH_*` | Microsoft Graph 邮件发送配置 |
+| `SMTP_*` | SMTP / Exchange relay 邮件发送配置 |
 | `DEPLOY_MODE` | 部署模式，默认 `standalone`，只运行 Go 服务 |
 
 `.env` 包含真实密钥和本机路径，不应提交到仓库。
@@ -117,11 +119,17 @@ sudo scripts/deploy.sh uninstall
 
 ## 邮件通知配置
 
-当前邮件发送使用个人 Outlook / Hotmail 的 Microsoft Graph delegated token。
+邮件发送支持两种方式：
 
-需要在 `.env` 中配置：
+- `graph`：个人 Outlook / Hotmail / Microsoft 365 的 Microsoft Graph delegated token。
+- `smtp`：公司 Exchange SMTP relay 或其他 SMTP 服务器。
+
+### Microsoft Graph OAuth2
+
+在 `.env` 中配置：
 
 ```env
+MAIL_PROVIDER=graph
 GRAPH_CLIENT_ID=你的应用客户端 ID
 GRAPH_CLIENT_SECRET=可选，按应用注册类型填写
 GRAPH_ACCESS_TOKEN=脚本生成的 access_token
@@ -139,6 +147,37 @@ python3 tools/outlook_tokens.py
 
 ```text
 https://login.microsoftonline.com/common/oauth2/nativeclient
+```
+
+### SMTP / Exchange relay
+
+如果公司提供 Exchange SMTP relay，推荐使用 `smtp`：
+
+```env
+MAIL_PROVIDER=smtp
+SMTP_HOST=exchange-relay.internal
+SMTP_PORT=25
+SMTP_FROM=opensource-watcher@example.com
+SMTP_STARTTLS=false
+```
+
+如果 relay 要求账号密码：
+
+```env
+SMTP_USERNAME=your-account@example.com
+SMTP_PASSWORD=your-password-or-app-password
+```
+
+如果使用 Microsoft 365 SMTP AUTH，常见配置是：
+
+```env
+MAIL_PROVIDER=smtp
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_FROM=your-account@example.com
+SMTP_USERNAME=your-account@example.com
+SMTP_PASSWORD=your-password-or-app-password
+SMTP_STARTTLS=true
 ```
 
 ## 使用方式

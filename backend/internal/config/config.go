@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,15 @@ type GraphMailConfig struct {
 	RefreshToken string
 }
 
+type SMTPMailConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+	StartTLS bool
+}
+
 type Config struct {
 	ServerAddr    string
 	DBPath        string
@@ -23,7 +33,9 @@ type Config struct {
 	CheckInterval time.Duration
 	StaticDir     string
 	Auth          AuthConfig
+	MailProvider  string
 	GraphMail     GraphMailConfig
+	SMTPMail      SMTPMailConfig
 }
 
 type AuthConfig struct {
@@ -53,12 +65,21 @@ func Load() Config {
 			Secret:      env("SESSION_SECRET", adminUsername+":"+adminPassword),
 			IdleTimeout: durationEnv("SESSION_IDLE_TIMEOUT", 10*time.Minute),
 		},
+		MailProvider: strings.ToLower(env("MAIL_PROVIDER", "graph")),
 		GraphMail: GraphMailConfig{
 			TenantID:     os.Getenv("GRAPH_TENANT_ID"),
 			ClientID:     os.Getenv("GRAPH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GRAPH_CLIENT_SECRET"),
 			AccessToken:  os.Getenv("GRAPH_ACCESS_TOKEN"),
 			RefreshToken: os.Getenv("GRAPH_REFRESH_TOKEN"),
+		},
+		SMTPMail: SMTPMailConfig{
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     intEnv("SMTP_PORT", 25),
+			Username: os.Getenv("SMTP_USERNAME"),
+			Password: os.Getenv("SMTP_PASSWORD"),
+			From:     os.Getenv("SMTP_FROM"),
+			StartTLS: boolEnv("SMTP_STARTTLS", false),
 		},
 	}
 }
@@ -175,6 +196,30 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func intEnv(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}
