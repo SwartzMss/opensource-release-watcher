@@ -161,6 +161,25 @@ SMTP_FROM=opensource-watcher@example.com
 SMTP_STARTTLS=false
 ```
 
+这些参数通常需要向公司 IT、邮箱管理员或 Exchange 管理员确认。可以直接询问：
+
+```text
+我们有一个内部系统需要通过 SMTP 发送通知邮件，请提供以下配置：
+- SMTP relay 地址，也就是 SMTP_HOST
+- SMTP 端口，也就是 SMTP_PORT，常见为 25、587 或 465
+- 是否需要 STARTTLS
+- 是否需要用户名和密码认证
+- 允许使用的发件人地址，也就是 SMTP_FROM
+- 是否限制服务器 IP 白名单、收件人域名或发信频率
+```
+
+常见判断方式：
+
+- 内网 Exchange relay 通常是公司域名或内网地址，例如 `exchange-relay.internal`、`mail.company.com`，端口多为 `25`，可能不需要账号密码，但会限制服务器 IP 白名单。
+- 需要账号密码时，通常要填写 `SMTP_USERNAME` 和 `SMTP_PASSWORD`；很多公司会要求使用应用密码或专用系统账号。
+- 如果端口是 `587`，通常需要 `SMTP_STARTTLS=true`。
+- 如果公司只给了 Outlook Web / Exchange 网页地址，那不是 SMTP 地址，需要继续向管理员确认 SMTP relay 或 SMTP AUTH 配置。
+
 如果 relay 要求账号密码：
 
 ```env
